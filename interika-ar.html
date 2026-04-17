@@ -219,12 +219,14 @@
     }
 
     .ui-hint {
-      font-size: 9px;
+      font-size: clamp(7px, 2.2vw, 9px); /* Se auto-ajusta al ancho del celular */
       font-weight: 300;
-      color: var(--arena);
-      letter-spacing: 0.3em;
+      color: var(--arena2);
+      letter-spacing: 0.15em; /* Redujimos un poco el aire entre letras */
       text-transform: uppercase;
       text-align: center;
+      width: 100%;
+      white-space: nowrap; /* 🛑 Magia pura: Prohíbe que el texto salte de línea */
     }
 
     .ui-botones { display: flex; gap: 12px; width: 100%; max-width: 360px; }
