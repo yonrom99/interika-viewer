@@ -16,12 +16,12 @@
 
     :root {
       --negro:    #0a0a0a;
-      --blanco:   #f5f2ee;
-      --arena:    #c8b89a;
-      --arena2:   #a09070;
+      --blanco:   #ffffff;
+      --arena:    #ffffff;   /* Acento principal: Blanco */
+      --arena2:   #999999;   /* Acento secundario: Gris elegante */
       --carbon:   #1a1a1a;
-      --vidrio:   rgba(245,242,238,0.06);
-      --borde:    rgba(200,184,154,0.25);
+      --vidrio:   rgba(255,255,255,0.06);
+      --borde:    rgba(255,255,255,0.25);
     }
 
     html, body {
@@ -68,6 +68,7 @@
       color: var(--blanco);
       letter-spacing: 0.12em;
       text-transform: uppercase;
+      text-align: center; /* <--- ESTA ES LA MAGIA QUE LO CENTRA */
       animation: logoIn 1.4s 0.2s cubic-bezier(0.16,1,0.3,1) both;
     }
     .splash-subtitulo {
@@ -309,7 +310,7 @@
   <div id="splash">
     <svg class="splash-logo" viewBox="0 0 200 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <text x="0" y="30" font-family="Cormorant Garamond, serif" font-size="28" font-weight="300"
-            fill="#c8b89a" letter-spacing="8">INTERIKA</text>
+            <text x="0" y="30" font-family="Cormorant Garamond, serif" font-size="28" font-weight="300" fill="#ffffff" letter-spacing="8">INTERIKA</text>
     </svg>
     <p class="splash-titulo">Realidad Aumentada</p>
     <p class="splash-subtitulo">Visualización Inmersiva</p>
@@ -343,7 +344,7 @@
     <div class="ui-header">
       <svg class="ui-logo-small" viewBox="0 0 160 30" fill="none" xmlns="http://www.w3.org/2000/svg">
         <text x="0" y="22" font-family="Cormorant Garamond, serif" font-size="20" font-weight="300"
-              fill="#c8b89a" letter-spacing="5">INTERIKA</text>
+              <text x="0" y="22" font-family="Cormorant Garamond, serif" font-size="20" font-weight="300" fill="#ffffff" letter-spacing="5">INTERIKA</text>
       </svg>
       <div class="ui-nombre">
         <p class="ui-nombre-proyecto" id="ui-nombre">Casa Prisma</p>
