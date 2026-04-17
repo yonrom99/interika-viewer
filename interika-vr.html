@@ -813,7 +813,37 @@ async function compartir() {
     setTimeout(() => btn.innerHTML = orig, 2000);
   }
 }
-</script>
+<script>
+    // Parche Interika: Entrada forzada
+    function forzarEntrada() {
+      console.log("Entrada forzada activada");
+      // Quitamos el splash
+      const splash = document.getElementById('splash');
+      if (splash) splash.style.display = 'none';
+      
+      // Quitamos el cargando
+      const cargando = document.getElementById('cargando');
+      if (cargando) cargando.style.display = 'none';
+      
+      // Mostramos la escena
+      const escena = document.getElementById('escena-wrapper');
+      if (escena) {
+        escena.style.display = 'block';
+        escena.classList.add('visible');
+      }
+    }
+
+    // Buscamos el botón y le damos el poder de entrar sí o sí
+    window.addEventListener('load', () => {
+      const btn = document.querySelector('.s-btn-entrar');
+      if (btn) {
+        btn.addEventListener('click', () => {
+          // Después de 1 segundo de "cargando", entramos a huevo
+          setTimeout(forzarEntrada, 1000);
+        });
+      }
+    });
+  </script>
 
 </body>
 </html>
