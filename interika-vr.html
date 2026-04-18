@@ -307,8 +307,8 @@
 <div id="escena-base">
   <a-scene
     id="escena"
-    vr-mode-ui="enabled: true"
-    embedded
+    vr-mode-ui="enabled: false"
+    webxr="optionalFeatures: dom-overlay; overlayElement: #badge-vr"
     renderer="antialias: true; colorManagement: true"
     loading-screen="enabled: false"
   >
@@ -495,21 +495,24 @@ function entrar() {
   // Revelar escena (ya estaba inicializada en segundo plano)
   document.getElementById('escena-base').classList.add('activa');
 
+  const initScene = () => {
+    window.dispatchEvent(new Event('resize'));
+    setTimeout(() => {
+      if (modo === '360') {
+        arrancar360();
+      } else {
+        arrancarLibre();
+      }
+    }, 400);
+  };
+
   // Permiso giroscopio iOS 13+
   if (typeof DeviceOrientationEvent !== 'undefined' &&
       typeof DeviceOrientationEvent.requestPermission === 'function') {
-    DeviceOrientationEvent.requestPermission().catch(() => {});
+    DeviceOrientationEvent.requestPermission().then(initScene).catch(initScene);
+  } else {
+    initScene();
   }
-
-  // Pequeño delay para que el browser termine de pintar
-  // antes de manipular el DOM de A-Frame
-  setTimeout(() => {
-    if (modo === '360') {
-      arrancar360();
-    } else {
-      arrancarLibre();
-    }
-  }, 400);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -540,6 +543,7 @@ function irA(id) {
   if (!esc) return;
   const idx = CFG.escenas.indexOf(esc);
 
+  document.getElementById('sky').setAttribute('color', '#ffffff');
   document.getElementById('sky').setAttribute('src', esc.img);
   document.getElementById('ui-esc-nombre').textContent = esc.nombre;
   document.getElementById('ui-esc-num').textContent    = `${idx+1} / ${CFG.escenas.length}`;
@@ -595,7 +599,7 @@ function arrancarLibre() {
   document.getElementById('miniaturas').style.display    = 'none';
   document.getElementById('cursor').setAttribute('visible', 'false');
   document.getElementById('sky').setAttribute('color', '#09090b');
-  document.getElementById('sky').setAttribute('src', '');
+  document.getElementById('sky').removeAttribute('src');
   document.getElementById('modelo-libre').setAttribute('visible', 'true');
 
   const gltf = document.getElementById('modelo-gltf');
@@ -650,12 +654,20 @@ function avanzar() {
 //  VR
 // ══════════════════════════════════════════════════════════
 function activarVR() {
-  document.getElementById('escena').enterVR();
-  document.getElementById('badge-vr').classList.add('visible');
+  const escena = document.getElementById('escena');
+  if (escena.hasLoaded) {
+    escena.enterVR();
+  }
 }
+
+document.getElementById('escena').addEventListener('enter-vr', () => {
+  document.getElementById('badge-vr').classList.add('visible');
+  document.getElementById('ui').classList.remove('visible');
+});
 
 document.getElementById('escena').addEventListener('exit-vr', () => {
   document.getElementById('badge-vr').classList.remove('visible');
+  document.getElementById('ui').classList.add('visible');
 });
 
 // ══════════════════════════════════════════════════════════
