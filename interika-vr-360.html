@@ -216,17 +216,14 @@
       margin-top: 2px;
     }
 
-    /* Indicador de escena actual */
+    /* Indicador de escena actual — fluye en el flexbox del footer */
     .ui-escena-badge {
-      position: absolute;
-      top: max(20px, env(safe-area-inset-top));
-      left: 50%;
-      transform: translateX(-50%);
       background: rgba(10,10,10,0.6);
       border: 1px solid var(--borde);
       padding: 6px 18px;
       pointer-events: none;
       transition: opacity 0.4s ease;
+      align-self: center;
     }
     .ui-escena-nombre {
       font-size: 8px; font-weight: 300; color: var(--blanco);
@@ -356,7 +353,7 @@
     <a-assets id="assets-container" timeout="30000"></a-assets>
 
     <!-- Cielo panorámico -->
-    <a-sky id="sky-principal" src="" color="#0a0a0a" animation__color=""></a-sky>
+    <a-sky id="sky-principal" src="" color="#0a0a0a" crossorigin="anonymous" animation__color=""></a-sky>
 
     <!-- Cámara con cursor Fuse -->
     <a-entity id="camara-rig" position="0 0 0">
@@ -403,12 +400,12 @@
       </div>
     </div>
 
-    <!-- Badge de escena actual (centro arriba) -->
-    <div class="ui-escena-badge" id="badge-escena">
-      <p class="ui-escena-nombre" id="badge-escena-nombre">—</p>
-    </div>
-
     <div class="ui-footer">
+      <!-- Badge de escena actual — dentro del footer, arriba del hint -->
+      <div class="ui-escena-badge" id="badge-escena">
+        <p class="ui-escena-nombre" id="badge-escena-nombre">—</p>
+      </div>
+
       <p class="ui-hint" id="ui-hint">Mira los portales · Sostén la mirada para navegar</p>
 
       <!-- Miniaturas de escenas -->
@@ -487,15 +484,20 @@
       }
     }
 
-    /* Demo fallback cuando no hay red / config */
+    /* Demo fallback: usa data URIs de color sólido — sin CORS, sin hotlinking */
     function demoFallback() {
+      // Equirectangulares de color sólido codificados como data URI (1×1 px escalado por A-Frame)
+      // Escena 1: azul pizarra oscuro  |  Escena 2: verde pizarra oscuro
+      const img1 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAAR CAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
+      const img2 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
+
       return {
         nombre: 'Proyecto Demo',
         escenas: [
           {
             id: 'sala',
             nombre: 'Sala Principal',
-            imagen: 'https://upload.wikimedia.org/wikipedia/commons/thumb/8/8e/360_Panorama_of_the_Painted_Hall_at_Greenwich_UK.jpg/2560px-360_Panorama_of_the_Painted_Hall_at_Greenwich_UK.jpg',
+            imagen: img1,
             hotspots: [
               { id: 'a_cocina', label: 'Cocina', destino: 'cocina', pitch: -10, yaw: 90 }
             ]
@@ -503,7 +505,7 @@
           {
             id: 'cocina',
             nombre: 'Cocina',
-            imagen: 'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a7/Camponotus_flavomarginatus_ant.jpg/2560px-Camponotus_flavomarginatus_ant.jpg',
+            imagen: img2,
             hotspots: [
               { id: 'a_sala', label: 'Sala', destino: 'sala', pitch: -10, yaw: -90 }
             ]
@@ -682,10 +684,11 @@
         btn.setAttribute('aria-label', esc.nombre || `Ir a escena ${i + 1}`);
         btn.onclick = () => cargarEscena(i);
 
-        if (esc.imagen) {
+        if (esc.imagen && !esc.imagen.startsWith('data:')) {
           const img = document.createElement('img');
           img.src = esc.imagen;
           img.alt = esc.nombre || '';
+          img.crossOrigin = 'anonymous';
           btn.appendChild(img);
         }
         contenedor.appendChild(btn);
