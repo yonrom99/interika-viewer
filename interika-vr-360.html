@@ -37,6 +37,7 @@
     .a-enter-ar { display: none !important; }
 
     /* ─── SPLASH SCREEN ─── */
+    /* BUG 1: z-index muy alto para tapar el canvas de A-Frame que ahora arranca visible */
     #splash {
       position: fixed;
       inset: 0;
@@ -154,6 +155,7 @@
     }
 
     /* ─── LOADING OVERLAY ─── */
+    /* BUG 1: z-index muy alto para tapar el canvas de A-Frame */
     #cargando {
       position: fixed; inset: 0; background: var(--negro); display: flex; flex-direction: column;
       align-items: center; justify-content: center; z-index: 150; transition: opacity 0.6s ease;
@@ -275,6 +277,7 @@
     .btn-secundario:hover { border-color: var(--arena); color: var(--arena); }
 
     /* ─── AFRAME CANVAS ─── */
+    /* BUG 1: a-scene ya no tiene display:none — arranca visible de fondo, z-index 1 */
     a-scene {
       position: fixed;
       inset: 0;
@@ -289,7 +292,7 @@
     }
     #transicion.activa { opacity: 1; pointer-events: all; }
 
-    /* ─── MINIATURAS DE ESCENAS (carrusel inferior opcional) ─── */
+    /* ─── MINIATURAS DE ESCENAS (carrusel inferior) ─── */
     .ui-miniaturas {
       display: flex; gap: 8px; overflow-x: auto; max-width: 100%;
       scrollbar-width: none; padding: 0 4px;
@@ -341,19 +344,20 @@
   </div>
 
   <!-- ESCENA A-FRAME -->
+  <!-- BUG 1: Sin display:none — A-Frame arranca y calibra el canvas desde el inicio -->
   <a-scene
     id="escena-aframe"
     embedded
     vr-mode-ui="enabled: false"
     loading-screen="enabled: false"
     renderer="antialias: true; colorManagement: true"
-    style="display:none"
   >
     <!-- Assets -->
     <a-assets id="assets-container" timeout="30000"></a-assets>
 
     <!-- Cielo panorámico -->
-    <a-sky id="sky-principal" src="" color="#ffffff" crossorigin="anonymous" animation__color=""></a-sky>
+    <!-- BUG 2: crossorigin="anonymous" aplicado. color="#ffffff" respetado del cambio manual. -->
+    <a-sky id="sky-principal" src="" color="#ffffff" crossorigin="anonymous"></a-sky>
 
     <!-- Cámara con cursor Fuse -->
     <a-entity id="camara-rig" position="0 0 0">
@@ -363,6 +367,7 @@
         wasd-controls="enabled: false"
       >
         <!-- Cursor Fuse: muy sutil, semi-transparente -->
+        <!-- BUG 3: raycaster apunta a .hotspot-ring con near:0 para no perderse objetos cercanos -->
         <a-cursor
           id="cursor-fuse"
           fuse="true"
@@ -370,7 +375,7 @@
           color="#ffffff"
           opacity="0.35"
           scale="0.6 0.6 0.6"
-          raycaster="objects: .hotspot-ring"
+          raycaster="objects: .hotspot-ring; near: 0; far: 20"
           animation__click="property: scale; startEvents: click; easing: easeInCubic; dur: 150; from: 0.6 0.6 0.6; to: 0.8 0.8 0.8"
           animation__clickreset="property: scale; startEvents: animationcomplete__click; easing: easeOutCubic; dur: 150; from: 0.8 0.8 0.8; to: 0.6 0.6 0.6"
           animation__fusestart="property: scale; startEvents: mouseenter; easing: easeInOutQuad; dur: 1500; from: 0.6 0.6 0.6; to: 1.1 1.1 1.1"
@@ -438,14 +443,13 @@
     ══════════════════════════════════════════════ */
     const SUPABASE_BASE = 'https://nnfsyqbijkygmkymcexu.supabase.co/storage/v1/object/public/interika-360';
 
-    const params       = new URLSearchParams(window.location.search);
-    const TOUR_ID      = params.get('tour') || 'Proyecto Demo/VR-360';
+    const params      = new URLSearchParams(window.location.search);
+    const TOUR_ID     = params.get('tour') || 'Proyecto Demo/VR-360';
+    const CONFIG_URL  = `${SUPABASE_BASE}/${TOUR_ID}/config.json`;
 
-    const CONFIG_URL   = `${SUPABASE_BASE}/${TOUR_ID}/config.json`;
-
-    let tourData        = null;   // objeto JSON completo
-    let escenaActual    = 0;      // índice de la escena en pantalla
-    let cargandoEscena  = false;  // mutex de transición
+    let tourData       = null;
+    let escenaActual   = 0;
+    let cargandoEscena = false;
 
     /* ══════════════════════════════════════════════
        REFERENCIAS DOM / A-FRAME
@@ -462,16 +466,14 @@
     ══════════════════════════════════════════════ */
     async function cargarConfig() {
       try {
-        const res  = await fetch(CONFIG_URL);
+        const res = await fetch(CONFIG_URL);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        tourData   = await res.json();
+        tourData  = await res.json();
 
-        // Rellenar splash con datos reales
         const nombre = tourData.nombre || TOUR_ID.split('/').pop();
         document.getElementById('splash-nombre').textContent = nombre;
         document.getElementById('ui-nombre').textContent     = nombre;
 
-        // Quitar loading, mostrar splash
         elCargando.classList.add('oculto');
         elBarra.style.width = '0%';
 
@@ -484,11 +486,9 @@
       }
     }
 
-    /* Demo fallback: usa data URIs de color sólido — sin CORS, sin hotlinking */
+    /* Demo fallback: data URIs de color sólido — sin CORS, sin hotlinking */
     function demoFallback() {
-      // Equirectangulares de color sólido codificados como data URI (1×1 px escalado por A-Frame)
-      // Escena 1: azul pizarra oscuro  |  Escena 2: verde pizarra oscuro
-      const img1 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAAR CAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
+      const img1 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
       const img2 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
 
       return {
@@ -520,18 +520,20 @@
     function iniciarRecorrido() {
       elSplash.classList.add('oculto');
       elCargando.classList.remove('oculto');
-      elCargando.classList.remove('visible'); // quitar pointer-events block
+      elCargando.classList.add('visible');
 
-      // Mostrar la escena A-Frame
-      elEscenaAframe.style.display = 'block';
-
-      // Esperar a que A-Frame esté listo
-      elEscenaAframe.addEventListener('loaded', () => {
+      // BUG 1: Forzar resize del canvas WebGL ahora que el splash se ocultó
+      // Garantiza que A-Frame recalcule dimensiones correctas en móvil
+      const scene = document.querySelector('a-scene');
+      if (scene.hasLoaded) {
+        scene.resize();
         cargarEscena(0, true);
-      }, { once: true });
-
-      // Si ya estaba loaded (segunda llamada improbable)
-      if (elEscenaAframe.hasLoaded) cargarEscena(0, true);
+      } else {
+        scene.addEventListener('loaded', () => {
+          scene.resize();
+          cargarEscena(0, true);
+        }, { once: true });
+      }
     }
 
     /* ══════════════════════════════════════════════
@@ -542,9 +544,13 @@
       cargandoEscena = true;
 
       const escena = tourData.escenas[indice];
-      if (!escena) { cargandoEscena = false; return; }
+      if (!escena) {
+        // BUG 3: Garantizar liberación del mutex aunque no haya escena
+        cargandoEscena = false;
+        return;
+      }
 
-      // Fade a negro
+      // Fade a negro (transiciones 2+)
       if (!primeraCarga) {
         elTransicion.classList.add('activa');
         await esperar(350);
@@ -555,29 +561,27 @@
       sky.setAttribute('src', escena.imagen);
       escenaActual = indice;
 
-      // Actualizar badge de escena
+      // Actualizar badge y miniaturas
       document.getElementById('badge-escena-nombre').textContent = escena.nombre || `Escena ${indice + 1}`;
-
-      // Rebuild hotspots
       construirHotspots(escena.hotspots || []);
-
-      // Actualizar miniaturas activas
       actualizarMiniaturas();
 
       if (primeraCarga) {
-        // Esperar a que la textura cargue
-        sky.addEventListener('materialtextureloaded', () => {
+        // Esperar textura + failsafe de 6 s
+        // BUG 3: cargandoEscena = false garantizado en ambas ramas
+        const liberar = () => {
           elCargando.classList.add('oculto');
+          elCargando.classList.remove('visible');
           elOverlay.classList.add('visible');
-          cargandoEscena = false;
-        }, { once: true });
+          cargandoEscena = false;  // ← siempre se ejecuta
+        };
 
-        // Failsafe
+        sky.addEventListener('materialtextureloaded', liberar, { once: true });
+
         setTimeout(() => {
           if (cargandoEscena) {
-            elCargando.classList.add('oculto');
-            elOverlay.classList.add('visible');
-            cargandoEscena = false;
+            sky.removeEventListener('materialtextureloaded', liberar);
+            liberar();
           }
         }, 6000);
 
@@ -585,11 +589,11 @@
         // Fade desde negro
         await esperar(300);
         elTransicion.classList.remove('activa');
-        cargandoEscena = false;
+        cargandoEscena = false;  // ← siempre se ejecuta
       }
     }
 
-    /* Navegar a una escena por su ID (nombre) */
+    /* Navegar a una escena por su ID */
     function irAEscenaPorId(idDestino) {
       const idx = tourData.escenas.findIndex(e => e.id === idDestino);
       if (idx !== -1) cargarEscena(idx);
@@ -597,32 +601,28 @@
 
     /* ══════════════════════════════════════════════
        CONSTRUIR HOTSPOTS EN A-FRAME
-       pitch  → rotación vertical   (elevación)
-       yaw    → rotación horizontal (azimut)
+       pitch → elevación vertical | yaw → azimut horizontal
     ══════════════════════════════════════════════ */
     function construirHotspots(hotspots) {
       const contenedor = document.getElementById('hotspots-container');
-      // Limpiar hotspots anteriores
       while (contenedor.firstChild) contenedor.removeChild(contenedor.firstChild);
 
       hotspots.forEach(hs => {
-        // Convertir pitch/yaw a posición en esfera unitaria (radio 4.9)
         const r     = 4.9;
-        const phi   = THREE.MathUtils.degToRad(90 - hs.pitch);  // colatitud
-        const theta = THREE.MathUtils.degToRad(hs.yaw);         // azimut
+        const phi   = THREE.MathUtils.degToRad(90 - hs.pitch);
+        const theta = THREE.MathUtils.degToRad(hs.yaw);
 
-        const x = r * Math.sin(phi) * Math.sin(theta);
-        const y = r * Math.cos(phi);
-        const z = -r * Math.sin(phi) * Math.cos(theta);  // negativo por convención A-Frame
+        const x =  r * Math.sin(phi) * Math.sin(theta);
+        const y =  r * Math.cos(phi);
+        const z = -r * Math.sin(phi) * Math.cos(theta);
 
-        // Entidad raíz del hotspot
         const entidad = document.createElement('a-entity');
         entidad.setAttribute('id', `hs-${hs.id}`);
         entidad.setAttribute('position', `${x} ${y} ${z}`);
         entidad.setAttribute('look-at', '[camera]');
         entidad.classList.add('hotspot-ring');
 
-        // Anillo exterior (siempre visible, pulsante)
+        // Anillo exterior pulsante
         const anilloExt = document.createElement('a-ring');
         anilloExt.setAttribute('color', '#ffffff');
         anilloExt.setAttribute('opacity', '0.5');
@@ -630,13 +630,13 @@
         anilloExt.setAttribute('radius-outer', '0.12');
         anilloExt.setAttribute('animation', 'property: scale; dir: alternate; loop: true; dur: 1800; easing: easeInOutSine; from: 1 1 1; to: 1.25 1.25 1.25');
 
-        // Anillo interior (relleno semitransparente)
+        // Relleno semitransparente
         const anilloInt = document.createElement('a-circle');
         anilloInt.setAttribute('color', '#ffffff');
         anilloInt.setAttribute('opacity', '0.15');
         anilloInt.setAttribute('radius', '0.08');
 
-        // Texto label (debajo del anillo)
+        // Label
         const label = document.createElement('a-text');
         label.setAttribute('value', hs.label || '');
         label.setAttribute('color', '#ffffff');
@@ -651,12 +651,12 @@
         entidad.appendChild(anilloInt);
         entidad.appendChild(label);
 
-        // Evento: mirada fija (fuse) → cambiar escena
+        // Gaze fuse → cambiar escena
         entidad.addEventListener('click', () => {
           if (!cargandoEscena) irAEscenaPorId(hs.destino);
         });
 
-        // Hover: resaltar
+        // Hover highlight
         entidad.addEventListener('mouseenter', () => {
           anilloExt.setAttribute('color', '#cccccc');
           anilloInt.setAttribute('opacity', '0.35');
@@ -668,6 +668,14 @@
 
         contenedor.appendChild(entidad);
       });
+
+      // BUG 3: Forzar al raycaster a re-indexar los nuevos objetos inyectados en el DOM
+      setTimeout(() => {
+        const cursorEl = document.querySelector('[raycaster]');
+        if (cursorEl && cursorEl.components && cursorEl.components.raycaster) {
+          cursorEl.components.raycaster.refreshObjects();
+        }
+      }, 200);
     }
 
     /* ══════════════════════════════════════════════
@@ -684,6 +692,7 @@
         btn.setAttribute('aria-label', esc.nombre || `Ir a escena ${i + 1}`);
         btn.onclick = () => cargarEscena(i);
 
+        // BUG 2: crossOrigin en miniaturas; omitir para data URIs
         if (esc.imagen && !esc.imagen.startsWith('data:')) {
           const img = document.createElement('img');
           img.src = esc.imagen;
@@ -696,8 +705,7 @@
     }
 
     function actualizarMiniaturas() {
-      const btns = document.querySelectorAll('.miniatura-btn');
-      btns.forEach((btn, i) => {
+      document.querySelectorAll('.miniatura-btn').forEach((btn, i) => {
         btn.classList.toggle('activa', i === escenaActual);
       });
     }
