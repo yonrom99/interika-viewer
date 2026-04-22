@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Interika · VR Free-Roam</title>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@200;300;400;500;600&display=swap');
+  </style>
+
+  <style>
+    /* ─── RESET & ROOT — copiado 1:1 del AR ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --negro:    #0a0a0a;
+      --blanco:   #ffffff;
+      --arena:    #ffffff;
+      --arena2:   #999999;
+      --carbon:   #1a1a1a;
+      --vidrio:   rgba(255,255,255,0.06);
+      --borde:    rgba(255,255,255,0.25);
+    }
+
+    html, body {
+      height: 100%; width: 100%;
+      overflow: hidden;
+      background: var(--negro);
+      font-family: 'Outfit', sans-serif;
+    }
+
+    /* ─── CANVAS ─── */
+    #canvas-container {
+      position: fixed; inset: 0; z-index: 0;
+    }
+
+    /* ─── SPLASH SCREEN — idéntico al AR ─── */
+    #splash {
+      position: fixed; inset: 0;
+      background: var(--negro);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 0; z-index: 100;
+      transition: opacity 0.8s ease, visibility 0.8s ease;
+    }
+    #splash.oculto { opacity: 0; visibility: hidden; pointer-events: none; }
+
+    .splash-logo {
+      width: 160px; margin-bottom: 40px;
+      animation: logoIn 1.2s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    @keyframes logoIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .splash-titulo {
+      font-family: 'Outfit', sans-serif;
+      font-size: clamp(28px, 8vw, 42px);
+      font-weight: 300; color: var(--blanco);
+      letter-spacing: 0.18em; text-transform: uppercase; text-align: center;
+      animation: logoIn 1.4s 0.2s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .splash-subtitulo {
+      font-size: 10px; font-weight: 300; color: var(--arena);
+      letter-spacing: 0.35em; text-transform: uppercase; margin-top: 8px;
+      animation: logoIn 1.4s 0.4s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .splash-linea {
+      width: 1px; height: 60px;
+      background: linear-gradient(to bottom, transparent, var(--arena), transparent);
+      margin: 40px 0;
+      animation: logoIn 1.6s 0.6s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .splash-info {
+      text-align: center;
+      animation: logoIn 1.6s 0.8s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .splash-nombre-proyecto {
+      font-family: 'Outfit', sans-serif;
+      font-size: clamp(16px, 5vw, 22px); font-weight: 400;
+      color: var(--blanco); letter-spacing: 0.06em;
+    }
+    .splash-nombre-tipo {
+      font-size: 9px; font-weight: 300; color: var(--arena2);
+      letter-spacing: 0.4em; text-transform: uppercase; margin-top: 4px;
+    }
+    .splash-btn {
+      margin-top: 48px; padding: 14px 40px;
+      background: transparent; border: 1px solid var(--arena);
+      color: var(--arena); font-family: 'Outfit', sans-serif;
+      font-size: 10px; font-weight: 500; letter-spacing: 0.3em;
+      text-transform: uppercase; cursor: pointer; transition: all 0.3s ease;
+      animation: logoIn 1.8s 1s cubic-bezier(0.16,1,0.3,1) both;
+      position: relative; overflow: hidden;
+    }
+    .splash-btn::before {
+      content: ''; position: absolute; inset: 0;
+      background: var(--arena); transform: translateX(-100%);
+      transition: transform 0.3s ease; z-index: -1;
+    }
+    .splash-btn:hover::before { transform: translateX(0); }
+    .splash-btn:hover { color: var(--negro); }
+
+    .splash-nota {
+      position: absolute;
+      bottom: max(28px, env(safe-area-inset-bottom));
+      font-size: 9px; color: var(--arena2);
+      letter-spacing: 0.25em; text-transform: uppercase; text-align: center;
+      animation: logoIn 2s 1.2s cubic-bezier(0.16,1,0.3,1) both;
+    }
+
+    /* ─── UI OVERLAY — idéntico al AR ─── */
+    #ui-overlay {
+      position: fixed; inset: 0;
+      pointer-events: none; z-index: 10;
+      opacity: 0; transition: opacity 0.6s ease;
+    }
+    #ui-overlay.visible { opacity: 1; }
+
+    .ui-header {
+      position: absolute; top: 0; left: 0; right: 0;
+      padding: max(20px, env(safe-area-inset-top)) 24px 20px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      background: linear-gradient(to bottom, rgba(10,10,10,0.7) 0%, transparent 100%);
+    }
+    .ui-logo-small { height: 28px; opacity: 0.9; }
+    .ui-nombre { text-align: right; }
+    .ui-nombre-proyecto {
+      font-family: 'Outfit', sans-serif; font-size: 16px; font-weight: 400;
+      color: var(--blanco); letter-spacing: 0.04em;
+    }
+    .ui-nombre-tipo {
+      font-size: 8px; font-weight: 300; color: var(--arena);
+      letter-spacing: 0.35em; text-transform: uppercase; margin-top: 2px;
+    }
+
+    .ui-footer {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      padding: 20px 24px max(28px, env(safe-area-inset-bottom));
+      background: linear-gradient(to top, rgba(10,10,10,0.8) 0%, transparent 100%);
+      display: flex; flex-direction: column; align-items: center; gap: 16px;
+      pointer-events: all;
+    }
+    .ui-hint {
+      font-size: clamp(7px, 2.2vw, 9px); font-weight: 300; color: var(--arena2);
+      letter-spacing: 0.15em; text-transform: uppercase; text-align: center;
+      width: 100%; white-space: nowrap;
+    }
+    .ui-botones { display: flex; gap: 12px; width: 100%; max-width: 360px; }
+
+    .btn-primario {
+      flex: 1; padding: 14px 12px;
+      background: var(--arena); border: none; color: var(--negro);
+      font-family: 'Outfit', sans-serif; font-size: 9px; font-weight: 500;
+      letter-spacing: 0.25em; text-transform: uppercase; cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-primario:hover { background: var(--blanco); }
+    .btn-primario:not(.activo) {
+      background: transparent;
+      border: 1px solid var(--borde);
+      color: var(--blanco);
+    }
+    .btn-primario:not(.activo):hover {
+      border-color: var(--arena); color: var(--arena);
+      background: transparent;
+    }
+
+    .btn-secundario {
+      flex: 1; padding: 14px 12px;
+      background: transparent; border: 1px solid var(--borde); color: var(--blanco);
+      font-family: 'Outfit', sans-serif; font-size: 9px; font-weight: 300;
+      letter-spacing: 0.25em; text-transform: uppercase; cursor: pointer;
+      transition: all 0.25s ease;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .btn-secundario:hover { border-color: var(--arena); color: var(--arena); }
+    .btn-secundario.activo { border-color: var(--arena); color: var(--arena); }
+    .btn-secundario:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* Botón cerrar controles — solo móvil */
+    #btn-cerrar-controles {
+      display: none;
+      flex: 1; padding: 14px 12px;
+      background: transparent; border: 1px solid var(--borde); color: var(--arena2);
+      font-family: 'Outfit', sans-serif; font-size: 9px; font-weight: 300;
+      letter-spacing: 0.25em; text-transform: uppercase; cursor: pointer;
+      transition: all 0.25s ease;
+      align-items: center; justify-content: center; gap: 8px;
+    }
+    #btn-cerrar-controles:hover { border-color: var(--arena2); color: var(--blanco); }
+    body.es-movil #btn-cerrar-controles { display: flex; }
+
+    /* ─── BADGE MODO ACTIVO — igual que ar-badge del AR ─── */
+    .modo-badge {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      left: 50%; transform: translateX(-50%);
+      background: rgba(10,10,10,0.7); border: 1px solid var(--borde);
+      padding: 8px 20px; display: flex; align-items: center; gap: 8px;
+      opacity: 0; transition: opacity 0.4s ease;
+      pointer-events: none;
+    }
+    .modo-badge.visible { opacity: 1; }
+    .modo-dot {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--arena);
+      animation: parpadeo 1.5s ease infinite;
+    }
+    @keyframes parpadeo { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+    .modo-badge-text {
+      font-size: 9px; font-weight: 300; color: var(--blanco);
+      letter-spacing: 0.3em; text-transform: uppercase;
+    }
+
+    /* ─── CROSSHAIR ─── */
+    #crosshair {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      pointer-events: none; z-index: 20; opacity: 0; transition: opacity 0.3s ease;
+    }
+    #crosshair.visible { opacity: 1; }
+
+    /* ─── MODAL INSTRUCCIONES ─── */
+    #modal-instrucciones {
+      position: fixed; inset: 0; z-index: 50;
+      background: rgba(10,10,10,0.88);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    #modal-instrucciones.visible { opacity: 1; visibility: visible; }
+
+    .modal-cerrar-x {
+      display: none;
+      position: absolute;
+      top: max(18px, env(safe-area-inset-top)); right: 20px;
+      width: 36px; height: 36px;
+      border: 1px solid var(--borde); background: rgba(10,10,10,0.7);
+      color: var(--arena2); cursor: pointer; font-size: 14px;
+      align-items: center; justify-content: center;
+      transition: border-color 0.25s, color 0.25s;
+      flex-shrink: 0; z-index: 2;
+    }
+    .modal-cerrar-x:hover { border-color: var(--arena); color: var(--blanco); }
+    body.es-movil .modal-cerrar-x { display: flex; }
+
+    .modal-caja {
+      border: 1px solid var(--borde); padding: 40px 48px;
+      max-width: 420px; width: 90%; text-align: center;
+      animation: logoIn 0.4s cubic-bezier(0.16,1,0.3,1) both;
+    }
+    .modal-titulo {
+      font-size: 10px; font-weight: 300; color: var(--arena2);
+      letter-spacing: 0.4em; text-transform: uppercase; margin-bottom: 32px;
+    }
+    .modal-teclas {
+      display: grid; grid-template-columns: repeat(3, 44px);
+      gap: 6px; justify-content: center; margin-bottom: 24px;
+    }
+    .tecla {
+      width: 44px; height: 44px;
+      border: 1px solid var(--borde); background: var(--vidrio);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 300; color: var(--blanco);
+      letter-spacing: 0.05em;
+    }
+    .tecla.vacia { background: transparent; border-color: transparent; }
+    .modal-desc {
+      font-size: 10px; font-weight: 300; color: var(--arena2);
+      letter-spacing: 0.15em; line-height: 2;
+    }
+    .modal-desc-movil {
+      font-size: 12px; font-weight: 300; color: var(--arena2);
+      letter-spacing: 0.12em; line-height: 2; margin-bottom: 8px;
+    }
+    .modal-btn {
+      margin-top: 32px; padding: 12px 36px;
+      background: transparent; border: 1px solid var(--arena);
+      color: var(--arena); font-family: 'Outfit', sans-serif;
+      font-size: 9px; font-weight: 500; letter-spacing: 0.3em;
+      text-transform: uppercase; cursor: pointer; transition: all 0.3s ease;
+    }
+    .modal-btn:hover { background: var(--arena); color: var(--negro); }
+
+    /* ─── JOYSTICK VIRTUAL ─── */
+    #joystick-container {
+      position: fixed;
+      bottom: max(100px, calc(env(safe-area-inset-bottom) + 90px));
+      left: 28px;
+      width: 110px; height: 110px;
+      z-index: 30; display: none; pointer-events: all;
+    }
+    #joystick-container.activo { display: block; }
+
+    .joystick-base {
+      width: 110px; height: 110px; border-radius: 50%;
+      border: 1px solid var(--borde);
+      background: rgba(10,10,10,0.5);
+      backdrop-filter: blur(4px); position: relative;
+    }
+    .joystick-knob {
+      width: 44px; height: 44px; border-radius: 50%;
+      background: rgba(255,255,255,0.12);
+      border: 1px solid rgba(255,255,255,0.35);
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      transition: transform 0.05s linear; pointer-events: none;
+    }
+
+    #touch-look-zone {
+      position: fixed; top: 0; right: 0;
+      width: 55%; height: calc(100% - 130px);
+      z-index: 25; display: none; pointer-events: all;
+    }
+    #touch-look-zone.activo { display: block; }
+
+    /* ─── BARRA CARGA ─── */
+    .barra-carga {
+      position: fixed; bottom: 0; left: 0; height: 1px;
+      background: var(--arena); width: 0%;
+      transition: width 0.3s ease; z-index: 200;
+    }
+
+    /* ─── NO VR ─── */
+    #no-vr {
+      display: none; position: fixed; inset: 0;
+      background: rgba(10,10,10,0.92); backdrop-filter: blur(8px);
+      flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 40px; z-index: 200;
+    }
+    #no-vr.visible { display: flex; }
+    .no-vr-icono { font-size: 40px; margin-bottom: 20px; opacity: 0.4; }
+    .no-vr-titulo {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px; font-weight: 300; color: var(--blanco);
+      letter-spacing: 0.04em; margin-bottom: 10px;
+    }
+    .no-vr-texto {
+      font-size: 11px; font-weight: 300; color: var(--arena2);
+      letter-spacing: 0.1em; line-height: 1.8; max-width: 280px;
+    }
+    .no-vr-cerrar {
+      margin-top: 28px; padding: 10px 32px;
+      background: transparent; border: 1px solid var(--borde); color: var(--arena2);
+      font-family: 'Outfit', sans-serif; font-size: 9px; font-weight: 300;
+      letter-spacing: 0.3em; text-transform: uppercase; cursor: pointer;
+    }
+    .no-vr-cerrar:hover { border-color: var(--arena); color: var(--arena); }
+  </style>
+</head>
+<body>
+
+  <div id="canvas-container"></div>
+  <div class="barra-carga" id="barra"></div>
+
+  <!-- ─── SPLASH — idéntico al AR ─── -->
+  <div id="splash">
+    <svg class="splash-logo" viewBox="0 0 220 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <text x="0" y="30" font-family="Outfit, sans-serif" font-size="26" font-weight="300"
+            fill="#ffffff" letter-spacing="10">INTERIKA</text>
+    </svg>
+    <p class="splash-titulo">Visor VR</p>
+    <p class="splash-subtitulo">Free-Roam Inmersivo</p>
+    <div class="splash-linea"></div>
+    <div class="splash-info">
+      <p class="splash-nombre-proyecto" id="splash-nombre">Casa Prisma</p>
+      <p class="splash-nombre-tipo">Modelo arquitectónico · VR</p>
+    </div>
+    <button class="splash-btn" id="btn-iniciar">Entrar al espacio</button>
+    <p class="splash-nota">Requiere WebGL · Compatible con gafas VR</p>
+  </div>
+
+  <!-- ─── UI OVERLAY — idéntico al AR ─── -->
+  <div id="ui-overlay">
+    <div class="ui-header">
+      <svg class="ui-logo-small" viewBox="0 0 180 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text x="0" y="22" font-family="Outfit, sans-serif" font-size="18" font-weight="300"
+              fill="#ffffff" letter-spacing="6">INTERIKA</text>
+      </svg>
+      <div class="ui-nombre">
+        <p class="ui-nombre-proyecto" id="ui-nombre">Casa Prisma</p>
+        <p class="ui-nombre-tipo">Visor · VR</p>
+      </div>
+    </div>
+
+    <div class="modo-badge" id="modo-badge">
+      <div class="modo-dot"></div>
+      <span class="modo-badge-text" id="modo-badge-text">Free-Roam · Activo</span>
+    </div>
+
+    <div class="ui-footer">
+      <p class="ui-hint" id="ui-hint">Rota · WASD para caminar · Click para capturar cursor</p>
+      <div class="ui-botones">
+        <button class="btn-primario activo" id="btn-freeroam" onclick="activarFreeRoam()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+            <path d="M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/>
+          </svg>
+          Free-Roam
+        </button>
+        <button class="btn-secundario" id="btn-vr" onclick="activarVR()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 8a2 2 0 012-2h16a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8z"/>
+            <circle cx="8.5" cy="12" r="2"/><circle cx="15.5" cy="12" r="2"/>
+            <path d="M10.5 12h3"/>
+          </svg>
+          VR Headset
+        </button>
+        <button id="btn-cerrar-controles" onclick="cerrarControlesMovil()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M18 6L6 18M6 6l12 12"/>
+          </svg>
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── CROSSHAIR ─── -->
+  <div id="crosshair">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="10" r="1" fill="rgba(255,255,255,0.8)"/>
+      <line x1="10" y1="3" x2="10" y2="7" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+      <line x1="10" y1="13" x2="10" y2="17" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+      <line x1="3" y1="10" x2="7" y2="10" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+      <line x1="13" y1="10" x2="17" y2="10" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+    </svg>
+  </div>
+
+  <!-- ─── MODAL INSTRUCCIONES ─── -->
+  <div id="modal-instrucciones">
+    <button class="modal-cerrar-x" onclick="cerrarModal()" aria-label="Cerrar">✕</button>
+    <div class="modal-caja" style="position:relative;">
+      <p class="modal-titulo">Controles · Free-Roam</p>
+      <div id="instrucciones-desktop">
+        <div class="modal-teclas">
+          <div class="tecla vacia"></div>
+          <div class="tecla">W</div>
+          <div class="tecla vacia"></div>
+          <div class="tecla">A</div>
+          <div class="tecla">S</div>
+          <div class="tecla">D</div>
+        </div>
+        <p class="modal-desc">
+          WASD — Caminar<br>
+          Ratón — Mirar<br>
+          ESC — Liberar cursor
+        </p>
+      </div>
+      <div id="instrucciones-movil" style="display:none;">
+        <div style="font-size:32px; margin-bottom:20px; opacity:0.6;">◎</div>
+        <p class="modal-desc-movil">
+          Usa el joystick para caminar<br>
+          y arrastra para mirar
+        </p>
+        <p class="modal-desc">
+          El joystick aparece abajo a la izquierda<br>
+          La zona derecha controla la cámara
+        </p>
+      </div>
+      <button class="modal-btn" onclick="cerrarModal()">Entendido</button>
+    </div>
+  </div>
+
+  <!-- ─── JOYSTICK VIRTUAL ─── -->
+  <div id="joystick-container">
+    <div class="joystick-base" id="joystick-base">
+      <div class="joystick-knob" id="joystick-knob"></div>
+    </div>
+  </div>
+
+  <div id="touch-look-zone"></div>
+
+  <!-- ─── NO VR ─── -->
+  <div id="no-vr">
+    <div class="no-vr-icono">⬡</div>
+    <h2 class="no-vr-titulo">VR no disponible</h2>
+    <p class="no-vr-texto">Tu dispositivo o navegador no soporta WebXR.<br><br>Puedes seguir usando el modo Free-Roam en pantalla.</p>
+    <button class="no-vr-cerrar" onclick="document.getElementById('no-vr').classList.remove('visible')">Cerrar</button>
+  </div>
+
+  <!-- ─── THREE.JS CDN ─── -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/PointerLockControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/webxr/VRButton.js"></script>
+
+  <script>
+  /* ═══════════════════════════════════════════════════
+     DETECCIÓN DE DISPOSITIVO
+  ═══════════════════════════════════════════════════ */
+  const ES_MOVIL = /Android|iPhone|iPad|iPod|Touch/i.test(navigator.userAgent)
+                || ('ontouchstart' in window);
+
+  /* ═══════════════════════════════════════════════════
+     CONFIGURACIÓN — velocidad −20 % (3.2 vs 4.0)
+  ═══════════════════════════════════════════════════ */
+  const CONFIG = {
+    nombreProyecto: obtenerParam('nombre') || 'Casa Prisma',
+    modeloURL:      obtenerParam('modelo') || 'https://modelviewer.dev/shared-assets/models/Astronaut.glb',
+    velocidad:      3.2,
+    altura:         1.7,
+  };
+
+  function obtenerParam(n) {
+    return new URLSearchParams(window.location.search).get(n);
+  }
+
+  /* ─── DOM ─── */
+  const splash     = document.getElementById('splash');
+  const overlay    = document.getElementById('ui-overlay');
+  const barra      = document.getElementById('barra');
+  const crosshair  = document.getElementById('crosshair');
+  const modoBadge  = document.getElementById('modo-badge');
+  const modoBadgeTx= document.getElementById('modo-badge-text');
+  const btnFR      = document.getElementById('btn-freeroam');
+  const btnVR      = document.getElementById('btn-vr');
+  const joyCont    = document.getElementById('joystick-container');
+  const joyBase    = document.getElementById('joystick-base');
+  const joyKnob    = document.getElementById('joystick-knob');
+  const touchLook  = document.getElementById('touch-look-zone');
+  const uiHint     = document.getElementById('ui-hint');
+
+  document.getElementById('splash-nombre').textContent = CONFIG.nombreProyecto;
+  document.getElementById('ui-nombre').textContent     = CONFIG.nombreProyecto;
+
+  if (ES_MOVIL) {
+    document.body.classList.add('es-movil');
+    uiHint.textContent = 'Joystick para caminar · Arrastra para mirar';
+    document.getElementById('instrucciones-desktop').style.display = 'none';
+    document.getElementById('instrucciones-movil').style.display   = 'block';
+  }
+
+  /* ─── ESTADO ─── */
+  let renderer, scene, camera, controls;
+  let modoActual = 'freeroam';
+  let moverAdelante = false, moverAtras = false, moverIzq = false, moverDer = false;
+
+  const VUP = new THREE.Vector3(0, 1, 0);
+
+  /* Raycasters — inicializados UNA VEZ */
+  const rayAbajo      = new THREE.Raycaster();
+  const rayMovimiento = new THREE.Raycaster();
+  rayAbajo.near = 0;      rayAbajo.far = 8;
+  rayMovimiento.near = 0; rayMovimiento.far = 0.6;
+  const DIR_ABAJO = new THREE.Vector3(0, -1, 0);
+
+  let velocidadY = 0;
+  const GRAVEDAD    = -9.8;
+  const ALTURA_OJOS = 1.7;
+  const RAMPA_MAX   = 0.55;
+
+  let colisionables = [];   /* Solo THREE.Mesh */
+  let timestampAnterior = 0;
+
+  const joy   = { activo: false, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0 };
+  const tLook = { activo: false, touchId: null, lx: 0, ly: 0 };
+
+  /* ═══════════════════════════════════════════════════
+     HDRI PROCEDURAL
+  ═══════════════════════════════════════════════════ */
+  function crearHDRI(renderer) {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    const W = 512, H = 256;
+    const data = new Float32Array(W * H * 4);
+    for (let y = 0; y < H; y++) {
+      const t = y / H;
+      let r, g, b;
+      if (t < 0.40) {
+        const f = t / 0.40;
+        r = THREE.MathUtils.lerp(0.01, 0.06, f);
+        g = THREE.MathUtils.lerp(0.02, 0.09, f);
+        b = THREE.MathUtils.lerp(0.10, 0.22, f);
+      } else if (t < 0.50) {
+        const f = (t - 0.40) / 0.10;
+        r = THREE.MathUtils.lerp(0.06, 4.2, f);
+        g = THREE.MathUtils.lerp(0.09, 3.0, f);
+        b = THREE.MathUtils.lerp(0.22, 1.2, f);
+      } else if (t < 0.55) {
+        const f = (t - 0.50) / 0.05;
+        r = THREE.MathUtils.lerp(4.2, 0.8, f);
+        g = THREE.MathUtils.lerp(3.0, 0.5, f);
+        b = THREE.MathUtils.lerp(1.2, 0.2, f);
+      } else {
+        const f = (t - 0.55) / 0.45;
+        r = THREE.MathUtils.lerp(0.8, 0.04, f);
+        g = THREE.MathUtils.lerp(0.5, 0.03, f);
+        b = THREE.MathUtils.lerp(0.2, 0.02, f);
+      }
+      for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4;
+        data[i]=r; data[i+1]=g; data[i+2]=b; data[i+3]=1.0;
+      }
+    }
+    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    tex.needsUpdate = true;
+    const envMap = pmrem.fromEquirectangular(tex).texture;
+    pmrem.dispose(); tex.dispose();
+    return envMap;
+  }
+
+  /* ═══════════════════════════════════════════════════
+     INICIALIZAR VISOR
+  ═══════════════════════════════════════════════════ */
+  function iniciarVisor() {
+    splash.classList.add('oculto');
+
+    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type    = THREE.PCFSoftShadowMap;
+    renderer.outputEncoding    = THREE.sRGBEncoding;
+    renderer.toneMapping       = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.xr.enabled        = true;
+    document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+    scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x060408, 0.018);
+
+    const envMap = crearHDRI(renderer);
+    scene.environment = envMap;
+    scene.background  = envMap;
+
+    scene.add(new THREE.AmbientLight(0xfff5e0, 1.2));
+
+    const dirLight = new THREE.DirectionalLight(0xffecc0, 2.2);
+    dirLight.position.set(18, 35, 12);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.width = dirLight.shadow.mapSize.height = 2048;
+    dirLight.shadow.camera.near = 0.5; dirLight.shadow.camera.far  = 150;
+    dirLight.shadow.camera.left = dirLight.shadow.camera.bottom = -50;
+    dirLight.shadow.camera.right = dirLight.shadow.camera.top   =  50;
+    dirLight.shadow.bias = -0.0008;
+    scene.add(dirLight);
+
+    const rimLight = new THREE.DirectionalLight(0x6688cc, 0.5);
+    rimLight.position.set(-20, 10, -25);
+    scene.add(rimLight);
+
+    /* Suelo — fallback de colisión siempre presente */
+    const suelo = new THREE.Mesh(
+      new THREE.PlaneGeometry(300, 300),
+      new THREE.MeshStandardMaterial({ color: 0x0d0f11, roughness: 0.9, metalness: 0.05, envMapIntensity: 0.6 })
+    );
+    suelo.rotation.x = -Math.PI / 2;
+    suelo.receiveShadow = true;
+    suelo.name = 'suelo_base';
+    scene.add(suelo);
+    colisionables.push(suelo);
+
+    const grid = new THREE.GridHelper(200, 80, 0x1e2428, 0x181c20);
+    grid.position.y = 0.002;
+    scene.add(grid);
+
+    camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.05, 400);
+    camera.position.set(0, ALTURA_OJOS, 8);
+
+    if (!ES_MOVIL) {
+      controls = new THREE.PointerLockControls(camera, renderer.domElement);
+      scene.add(controls.getObject());
+      controls.addEventListener('lock',   () => { crosshair.classList.add('visible'); document.getElementById('modal-instrucciones').classList.remove('visible'); });
+      controls.addEventListener('unlock', () => { crosshair.classList.remove('visible'); });
+      renderer.domElement.addEventListener('click', () => { if (modoActual === 'freeroam') controls.lock(); });
+    } else {
+      camera.rotation.order = 'YXZ';
+      scene.add(camera);
+      joyCont.classList.add('activo');
+      touchLook.classList.add('activo');
+      iniciarJoystick();
+      iniciarTouchLook();
+    }
+
+    cargarModelo(CONFIG.modeloURL);
+    window.addEventListener('resize', onResize);
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('keyup',   onKeyUp);
+    overlay.classList.add('visible');
+    renderer.setAnimationLoop(renderLoop);
+    setTimeout(() => { document.getElementById('modal-instrucciones').classList.add('visible'); }, 700);
+  }
+
+  /* ═══════════════════════════════════════════════════
+     CARGAR MODELO GLTF
+  ═══════════════════════════════════════════════════ */
+  function cargarModelo(url) {
+    const loader = new THREE.GLTFLoader();
+    loader.load(url,
+      (gltf) => {
+        const modelo = gltf.scene;
+        const box  = new THREE.Box3().setFromObject(modelo);
+        const size = box.getSize(new THREE.Vector3());
+        modelo.scale.setScalar((6 / Math.max(size.x, size.y, size.z)) * 3);
+        scene.add(modelo);
+        modelo.updateMatrixWorld(true);
+
+        const box2   = new THREE.Box3().setFromObject(modelo);
+        const center = box2.getCenter(new THREE.Vector3());
+        modelo.position.x = -center.x;
+        modelo.position.z = -center.z;
+        modelo.position.y = -box2.min.y;
+        modelo.updateMatrixWorld(true);
+
+        /* Detección CollisionMesh — recursiva, solo Meshes */
+        const collidersEncontrados = [];
+        modelo.traverse((nodo) => {
+          if (nodo.name && /collision/i.test(nodo.name)) {
+            nodo.visible = false;
+            nodo.traverse((hijo) => {
+              hijo.visible = false;
+              if (hijo.isMesh) {
+                hijo.visible = hijo.castShadow = hijo.receiveShadow = false;
+                hijo.frustumCulled    = false;
+                hijo.matrixAutoUpdate = true;
+                colisionables.push(hijo);
+                collidersEncontrados.push(hijo);
+              }
+            });
+          }
+        });
+
+        const setCol = new Set(collidersEncontrados);
+        modelo.traverse((n) => {
+          if (!n.isMesh || setCol.has(n)) return;
+          n.castShadow = n.receiveShadow = true;
+          const mats = Array.isArray(n.material) ? n.material : [n.material];
+          mats.forEach(m => { if (m && m.isMeshStandardMaterial) { m.envMapIntensity = 2.2; m.needsUpdate = true; } });
+        });
+
+        if (collidersEncontrados.length === 0) {
+          modelo.traverse((n) => { if (n.isMesh) colisionables.push(n); });
+        }
+
+        barra.style.width = '100%';
+        setTimeout(() => { barra.style.width = '0%'; }, 700);
+      },
+      (xhr) => { if (xhr.lengthComputable) barra.style.width = (xhr.loaded / xhr.total * 100) + '%'; },
+      (err) => { console.warn('Modelo no cargado, demo:', err); crearEscenaDemo(); barra.style.width = '0%'; }
+    );
+  }
+
+  function crearEscenaDemo() {
+    const mC = new THREE.MeshStandardMaterial({ color: 0x1e2124, roughness: 0.88, metalness: 0.02, envMapIntensity: 1.8 });
+    const mV = new THREE.MeshStandardMaterial({ color: 0x7799bb, metalness: 0.05, roughness: 0.04, transparent: true, opacity: 0.60, envMapIntensity: 2.5 });
+    const mM = new THREE.MeshStandardMaterial({ color: 0x99aabb, metalness: 0.92, roughness: 0.12, envMapIntensity: 2.5 });
+    const cuerpo = new THREE.Mesh(new THREE.BoxGeometry(12, 7, 12), mC);
+    cuerpo.position.set(0, 3.5, 0); cuerpo.castShadow = cuerpo.receiveShadow = true;
+    scene.add(cuerpo); colisionables.push(cuerpo);
+    const fachada = new THREE.Mesh(new THREE.PlaneGeometry(11.6, 6.8), mV);
+    fachada.position.set(0, 3.5, 6.01); scene.add(fachada);
+    [-5.8, 0, 5.8].forEach(x => { const c = new THREE.Mesh(new THREE.BoxGeometry(0.1, 7, 0.1), mM); c.position.set(x, 3.5, 6.06); scene.add(c); });
+    const techo = new THREE.Mesh(new THREE.BoxGeometry(12.4, 0.18, 12.4), mM);
+    techo.position.set(0, 7.1, 0); techo.castShadow = techo.receiveShadow = true;
+    scene.add(techo); colisionables.push(techo);
+  }
+
+  /* ═══════════════════════════════════════════════════
+     RENDER LOOP
+  ═══════════════════════════════════════════════════ */
+  function renderLoop(timestamp) {
+    const delta = Math.min((timestamp - timestampAnterior) / 1000, 0.1);
+    timestampAnterior = timestamp;
+    moverCamara(delta);
+    renderer.render(scene, camera);
+  }
+
+  /* ═══════════════════════════════════════════════════
+     MOVIMIENTO + FÍSICAS
+  ═══════════════════════════════════════════════════ */
+  function moverCamara(delta) {
+    const posActual = (!ES_MOVIL && controls) ? controls.getObject().position : camera.position;
+    const vel = CONFIG.velocidad * delta;
+    const desp = new THREE.Vector3();
+
+    if (!ES_MOVIL && controls && controls.isLocked) {
+      const frente = new THREE.Vector3();
+      controls.getDirection(frente); frente.y = 0; frente.normalize();
+      const lado = new THREE.Vector3().crossVectors(frente, VUP).normalize();
+      if (moverAdelante) desp.addScaledVector(frente,  vel);
+      if (moverAtras)    desp.addScaledVector(frente, -vel);
+      if (moverIzq)      desp.addScaledVector(lado,   -vel);
+      if (moverDer)      desp.addScaledVector(lado,    vel);
+    }
+
+    if (ES_MOVIL && (joy.dx !== 0 || joy.dy !== 0)) {
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+      const right = new THREE.Vector3().crossVectors(dir, VUP).normalize();
+      desp.addScaledVector(dir,  -(joy.dy / 33) * vel * 1.6);
+      desp.addScaledVector(right, (joy.dx / 33) * vel * 1.6);
+    }
+
+    /* Colisión con muros */
+    if (desp.length() > 0.0001 && colisionables.length > 0) {
+      const orig = posActual.clone(); orig.y -= 0.5;
+      rayMovimiento.set(orig, desp.clone().normalize());
+      const hits = rayMovimiento.intersectObjects(colisionables, false);
+      if (hits.length > 0 && hits[0].distance < 0.52) {
+        const face = hits[0].face;
+        if (face) {
+          const n = face.normal.clone().transformDirection(hits[0].object.matrixWorld);
+          n.y = 0;
+          if (n.length() > 0.001) { n.normalize(); const p = desp.dot(n); if (p < 0) desp.addScaledVector(n, -p); }
+        } else { desp.set(0,0,0); }
+      }
+    }
+
+    posActual.add(desp);
+
+    /* Gravedad + suelo + rampas */
+    if (colisionables.length > 0) {
+      const orig = posActual.clone(); orig.y += 0.3;
+      rayAbajo.set(orig, DIR_ABAJO);
+      const hits = rayAbajo.intersectObjects(colisionables, false);
+      if (hits.length > 0) {
+        const distReal = hits[0].distance - 0.3;
+        const targetY  = (orig.y - hits[0].distance) + ALTURA_OJOS;
+        const diff     = targetY - posActual.y;
+        if (distReal <= ALTURA_OJOS + 0.08) {
+          velocidadY = 0;
+          if      (Math.abs(diff) < 0.002)          { /* exacto */ }
+          else if (diff > 0 && diff <= RAMPA_MAX)   { posActual.y += diff * Math.min(delta * 20, 1.0); }
+          else if (diff <= 0)                        { posActual.y = targetY; }
+        } else {
+          velocidadY += GRAVEDAD * delta; posActual.y += velocidadY * delta;
+          if (posActual.y < targetY) { posActual.y = targetY; velocidadY = 0; }
+        }
+      } else {
+        velocidadY += GRAVEDAD * delta; posActual.y += velocidadY * delta;
+        if (posActual.y < -15) { posActual.y = ALTURA_OJOS; velocidadY = 0; }
+      }
+    } else {
+      posActual.y = ALTURA_OJOS;
+    }
+  }
+
+  /* ─── TECLADO ─── */
+  function onKeyDown(e) { switch(e.code){ case'KeyW':case'ArrowUp':moverAdelante=true;break;case'KeyS':case'ArrowDown':moverAtras=true;break;case'KeyA':case'ArrowLeft':moverIzq=true;break;case'KeyD':case'ArrowRight':moverDer=true;break; } }
+  function onKeyUp(e)   { switch(e.code){ case'KeyW':case'ArrowUp':moverAdelante=false;break;case'KeyS':case'ArrowDown':moverAtras=false;break;case'KeyA':case'ArrowLeft':moverIzq=false;break;case'KeyD':case'ArrowRight':moverDer=false;break; } }
+
+  /* ─── JOYSTICK ─── */
+  function iniciarJoystick() {
+    joyBase.addEventListener('touchstart', (e) => {
+      e.preventDefault(); if (joy.activo) return;
+      const t = e.changedTouches[0], rect = joyBase.getBoundingClientRect();
+      joy.activo=true; joy.touchId=t.identifier;
+      joy.cx=rect.left+rect.width/2; joy.cy=rect.top+rect.height/2;
+    }, {passive:false});
+    document.addEventListener('touchmove', (e) => {
+      if (!joy.activo) return;
+      for (const t of e.changedTouches) {
+        if (t.identifier!==joy.touchId) continue; e.preventDefault();
+        const dx=t.clientX-joy.cx, dy=t.clientY-joy.cy, dist=Math.sqrt(dx*dx+dy*dy), maxR=33;
+        if (dist>maxR){joy.dx=(dx/dist)*maxR;joy.dy=(dy/dist)*maxR;}else{joy.dx=dx;joy.dy=dy;}
+        joyKnob.style.transform=`translate(calc(-50% + ${joy.dx}px), calc(-50% + ${joy.dy}px))`;
+      }
+    },{passive:false});
+    document.addEventListener('touchend', (e) => {
+      for (const t of e.changedTouches) if(t.identifier===joy.touchId){joy.activo=false;joy.touchId=null;joy.dx=joy.dy=0;joyKnob.style.transform='translate(-50%,-50%)';}
+    });
+  }
+
+  /* ─── TOUCH-LOOK ─── */
+  function iniciarTouchLook() {
+    touchLook.addEventListener('touchstart', (e) => {
+      e.preventDefault(); if(tLook.activo)return;
+      const t=e.changedTouches[0]; tLook.activo=true; tLook.touchId=t.identifier; tLook.lx=t.clientX; tLook.ly=t.clientY;
+    },{passive:false});
+    touchLook.addEventListener('touchmove', (e) => {
+      if(!tLook.activo)return;
+      for(const t of e.changedTouches){
+        if(t.identifier!==tLook.touchId)continue; e.preventDefault();
+        const dx=(t.clientX-tLook.lx)*0.003, dy=(t.clientY-tLook.ly)*0.003;
+        tLook.lx=t.clientX; tLook.ly=t.clientY;
+        camera.rotation.order='YXZ'; camera.rotation.y-=dx;
+        camera.rotation.x=Math.max(-Math.PI/2.2,Math.min(Math.PI/2.2,camera.rotation.x-dy));
+      }
+    },{passive:false});
+    touchLook.addEventListener('touchend',(e)=>{ for(const t of e.changedTouches) if(t.identifier===tLook.touchId){tLook.activo=false;tLook.touchId=null;} });
+  }
+
+  /* ─── CERRAR CONTROLES MÓVIL ─── */
+  function cerrarControlesMovil() {
+    joy.activo=false; joy.touchId=null; joy.dx=joy.dy=0;
+    joyKnob.style.transform='translate(-50%,-50%)';
+    tLook.activo=false; tLook.touchId=null;
+    moverAdelante=moverAtras=moverIzq=moverDer=false;
+  }
+
+  /* ─── MODOS ─── */
+  function activarFreeRoam() {
+    if(modoActual==='freeroam'){ document.getElementById('modal-instrucciones').classList.add('visible'); return; }
+    modoActual='freeroam'; btnFR.classList.add('activo'); btnVR.classList.remove('activo');
+    mostrarBadge('Free-Roam · Activo');
+  }
+  async function activarVR() {
+    if(!navigator.xr){document.getElementById('no-vr').classList.add('visible');return;}
+    const ok=await navigator.xr.isSessionSupported('immersive-vr').catch(()=>false);
+    if(!ok){document.getElementById('no-vr').classList.add('visible');return;}
+    modoActual='vr'; btnVR.classList.add('activo'); btnFR.classList.remove('activo');
+    mostrarBadge('VR Headset · Conectando…');
+    try {
+      const session=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor','bounded-floor','hand-tracking']});
+      renderer.xr.setSession(session); mostrarBadge('VR Headset · Activo');
+      session.addEventListener('end',()=>{ modoActual='freeroam'; btnFR.classList.add('activo'); btnVR.classList.remove('activo'); mostrarBadge('Free-Roam · Activo'); setTimeout(()=>modoBadge.classList.remove('visible'),3000); });
+    } catch(err) {
+      console.warn(err); document.getElementById('no-vr').classList.add('visible');
+      modoActual='freeroam'; btnFR.classList.add('activo'); btnVR.classList.remove('activo');
+    }
+  }
+  function mostrarBadge(t) {
+    modoBadgeTx.textContent=t; modoBadge.classList.add('visible');
+    clearTimeout(modoBadge._timer);
+    modoBadge._timer=setTimeout(()=>modoBadge.classList.remove('visible'),4500);
+  }
+
+  /* ─── MODAL ─── */
+  function cerrarModal() {
+    document.getElementById('modal-instrucciones').classList.remove('visible');
+    if(!ES_MOVIL&&controls) controls.lock();
+  }
+
+  /* ─── RESIZE ─── */
+  function onResize() {
+    camera.aspect=window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth,window.innerHeight);
+  }
+
+  /* ─── ARRANQUE ─── */
+  document.getElementById('btn-iniciar').addEventListener('click', iniciarVisor);
+  </script>
+
+</body>
+</html>
