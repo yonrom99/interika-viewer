@@ -500,7 +500,7 @@
   const CONFIG = {
     nombreProyecto: obtenerParam('nombre') || 'Casa Prisma',
     modeloURL: obtenerParam('modelo') || 'https://modelviewer.dev/shared-assets/models/Astronaut.glb',
-    velocidad: 5,
+    velocidad: 4,       /* −20 % vs anterior — recorrido más pausado y profesional */
     altura: 1.7,
   };
 
@@ -569,48 +569,52 @@
      No depende de archivos externos.
   ═══════════════════════════════════════════════════ */
   function crearHDRI(renderer) {
-    /* Genera un CubeRenderTarget con colores de cielo/ciudad */
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
 
-    /* Creamos una textura equirectangular procedural (512×256) */
+    /*
+     * CRÍTICO: usar HalfFloatType (16-bit) en lugar de UnsignedByteType (8-bit).
+     * PMREMGenerator necesita rango HDR real para que los reflejos en metales y
+     * vidrios sean visibles. Con 8-bit el horizonte se satura y queda plano.
+     */
     const W = 512, H = 256;
-    const data = new Uint8Array(W * H * 4);
+    const data = new Float32Array(W * H * 4); /* Float32 → THREE convierte a HalfFloat internamente */
 
     for (let y = 0; y < H; y++) {
-      const t = y / H; /* 0=arriba, 1=abajo */
-      /* Cielo → color ciudad: azul noche degradado a naranja/gris cálido */
+      const t = y / H;
       let r, g, b;
-      if (t < 0.45) {
-        /* Cielo alto: azul petróleo */
-        const f = t / 0.45;
-        r = Math.round(THREE.MathUtils.lerp(14,  38,  f));
-        g = Math.round(THREE.MathUtils.lerp(22,  52,  f));
-        b = Math.round(THREE.MathUtils.lerp(42,  72,  f));
-      } else if (t < 0.55) {
-        /* Horizonte: cálido casi blanco — luz de ciudad */
-        const f = (t - 0.45) / 0.10;
-        r = Math.round(THREE.MathUtils.lerp(38,  220, f));
-        g = Math.round(THREE.MathUtils.lerp(52,  195, f));
-        b = Math.round(THREE.MathUtils.lerp(72,  160, f));
+
+      if (t < 0.42) {
+        /* Cielo alto: azul noche intenso */
+        const f = t / 0.42;
+        r = THREE.MathUtils.lerp(0.02, 0.10, f);
+        g = THREE.MathUtils.lerp(0.04, 0.14, f);
+        b = THREE.MathUtils.lerp(0.14, 0.24, f);
+      } else if (t < 0.52) {
+        /* Horizonte: bloom cálido ciudad — valores > 1.0 para HDR real */
+        const f = (t - 0.42) / 0.10;
+        r = THREE.MathUtils.lerp(0.10, 3.8,  f); /* sobre-exposición = glow de ciudad */
+        g = THREE.MathUtils.lerp(0.14, 2.8,  f);
+        b = THREE.MathUtils.lerp(0.24, 1.4,  f);
       } else {
-        /* Suelo: gris oscuro con tinte cálido */
-        const f = (t - 0.55) / 0.45;
-        r = Math.round(THREE.MathUtils.lerp(220, 28,  f));
-        g = Math.round(THREE.MathUtils.lerp(195, 24,  f));
-        b = Math.round(THREE.MathUtils.lerp(160, 20,  f));
+        /* Suelo: gris oscuro cálido */
+        const f = (t - 0.52) / 0.48;
+        r = THREE.MathUtils.lerp(3.8,  0.06, f);
+        g = THREE.MathUtils.lerp(2.8,  0.05, f);
+        b = THREE.MathUtils.lerp(1.4,  0.04, f);
       }
+
       for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
         data[i]   = r;
         data[i+1] = g;
         data[i+2] = b;
-        data[i+3] = 255;
+        data[i+3] = 1.0;
       }
     }
 
-    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
-    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
+    tex.mapping    = THREE.EquirectangularReflectionMapping;
     tex.needsUpdate = true;
 
     const envMap = pmremGenerator.fromEquirectangular(tex).texture;
@@ -742,47 +746,9 @@
       (gltf) => {
         const modelo = gltf.scene;
 
-        /* ── Traverse: sombras + envMap ── */
-        modelo.traverse((n) => {
-          if (!n.isMesh) return;
-          n.castShadow    = true;
-          n.receiveShadow = true;
-
-          /* envMapIntensity = 2.0 en todos los StandardMaterial */
-          const mats = Array.isArray(n.material) ? n.material : [n.material];
-          mats.forEach(m => {
-            if (m && m.isMeshStandardMaterial) {
-              m.envMapIntensity = 2.0;
-              m.needsUpdate     = true;
-            }
-          });
-
-          /* ── CollisionMesh ──
-             Si el nodo o algún ancestro se llama "CollisionMesh"
-             lo hacemos invisible y lo añadimos al array de colisiones.
-             Si no existe CollisionMesh en el modelo, usamos TODA la
-             geometría como colisionable (fallback seguro). */
-          let esColision = false;
-          let obj = n;
-          while (obj) {
-            if (obj.name && /collisionmesh/i.test(obj.name)) { esColision = true; break; }
-            obj = obj.parent;
-          }
-          if (esColision) {
-            n.visible = false;
-            colisionables.push(n);
-          }
-        });
-
-        /* Si el modelo no tenía CollisionMesh, toda la geometría colisiona */
-        const tieneCollider = colisionables.some(c => c !== scene.children.find(ch => ch.isPlane));
-        if (!tieneCollider) {
-          modelo.traverse((n) => {
-            if (n.isMesh && colisionables.indexOf(n) === -1) colisionables.push(n);
-          });
-        }
-
-        /* ── Escalar y centrar ── */
+        /* ── PASO 1: Escalar y centrar ANTES de agregar a la escena.
+           Esto es crítico: las matrixWorld de los meshes deben estar
+           actualizadas para que el Raycaster pueda intersectarlos. ── */
         const box    = new THREE.Box3().setFromObject(modelo);
         const size   = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z);
@@ -793,9 +759,63 @@
         const center2 = box2.getCenter(new THREE.Vector3());
         modelo.position.x = -center2.x;
         modelo.position.z = -center2.z;
-        modelo.position.y = -box2.min.y;  /* base en Y = 0 */
+        modelo.position.y = -box2.min.y;
 
+        /* Agregar a escena para que updateWorldMatrix funcione */
         scene.add(modelo);
+        /* Forzar actualización de matrices ANTES del traverse de colisiones */
+        modelo.updateMatrixWorld(true);
+
+        /* ── PASO 2: Detectar CollisionMesh ──
+           BUG ANTERIOR: se buscaba el nombre solo en meshes.
+           CORRECCIÓN: buscar en TODOS los nodos (Groups incluidos),
+           y cuando se encuentra un grupo CollisionMesh, ocultar el
+           nodo raíz del grupo y registrar TODOS sus hijos Mesh. ── */
+        let gruposCollider = [];
+        modelo.traverse((node) => {
+          if (node.name && /collisionmesh/i.test(node.name)) {
+            /* Ocultar el nodo raíz del grupo completo */
+            node.visible = false;
+            node.traverse((hijo) => {
+              if (hijo.isMesh) {
+                hijo.visible = false;
+                colisionables.push(hijo);
+              }
+            });
+            gruposCollider.push(node);
+          }
+        });
+
+        /* ── PASO 3: Sombras + envMap en meshes VISIBLES ── */
+        modelo.traverse((n) => {
+          if (!n.isMesh) return;
+
+          /* Si ya está en colisionables, skip (es invisible) */
+          if (colisionables.indexOf(n) !== -1) return;
+
+          n.castShadow    = true;
+          n.receiveShadow = true;
+
+          const mats = Array.isArray(n.material) ? n.material : [n.material];
+          mats.forEach(m => {
+            if (m && m.isMeshStandardMaterial) {
+              m.envMapIntensity = 2.0;
+              m.needsUpdate     = true;
+            }
+          });
+        });
+
+        /* ── PASO 4: Si NO había CollisionMesh en el modelo,
+           toda la geometría visible actúa como colisionable (fallback).
+           NOTA: en este caso los meshes SÍ son visibles, el raycaster
+           simplemente usa la geometría real del modelo. ── */
+        if (colisionables.length === 0) {
+          /* Solo el suelo (índice 0) está. Agregar todos los meshes del modelo. */
+          modelo.traverse((n) => {
+            if (n.isMesh) colisionables.push(n);
+          });
+        }
+
         barra.style.width = '100%';
         setTimeout(() => { barra.style.width = '0%'; }, 600);
       },
@@ -803,8 +823,7 @@
         if (xhr.lengthComputable) barra.style.width = (xhr.loaded / xhr.total * 100) + '%';
       },
       (err) => {
-        console.warn('Error cargando modelo:', err);
-        /* ── Fallback: edificio demo ── */
+        console.warn('Error cargando modelo, usando fallback demo:', err);
         crearEdificioDemoHDRI();
         barra.style.width = '0%';
       }
@@ -855,16 +874,19 @@
      MOVIMIENTO + FÍSICAS (Raycaster nativo)
   ═══════════════════════════════════════════════════ */
   function moverCamara(delta) {
+    /* Referencia unificada a la posición del jugador */
+    const posActual = (!ES_MOVIL && controls)
+      ? controls.getObject().position   /* PointerLock envuelve la cámara en un Object3D */
+      : camera.position;
+
     /* ── 1. Calcular intención de movimiento horizontal ── */
     const vel = CONFIG.velocidad * delta;
-    let desplazamiento = new THREE.Vector3();
+    const desplazamiento = new THREE.Vector3();
 
     if (!ES_MOVIL && controls && controls.isLocked) {
-      /* Dirección frontal y lateral desde PointerLockControls */
       const frente = new THREE.Vector3();
-      const lado   = new THREE.Vector3();
       controls.getDirection(frente); frente.y = 0; frente.normalize();
-      lado.crossVectors(frente, VUP).normalize();
+      const lado = new THREE.Vector3().crossVectors(frente, VUP).normalize();
 
       if (moverAdelante) desplazamiento.addScaledVector(frente,  vel);
       if (moverAtras)    desplazamiento.addScaledVector(frente, -vel);
@@ -876,93 +898,112 @@
       const dir = new THREE.Vector3();
       camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
       const right = new THREE.Vector3().crossVectors(dir, VUP).normalize();
-      const nx = joy.dx / 33;
-      const ny = joy.dy / 33;
-      desplazamiento.addScaledVector(dir,  -ny * vel * 2);
-      desplazamiento.addScaledVector(right, nx * vel * 2);
+      /* Joystick: normalizado ±1 sobre radio de 33px */
+      desplazamiento.addScaledVector(dir,  -(joy.dy / 33) * vel * 2);
+      desplazamiento.addScaledVector(right, (joy.dx / 33) * vel * 2);
     }
 
-    /* ── 2. Colisión con MUROS (rayo en dirección del movimiento) ── */
+    /* ── 2. Colisión con MUROS ──
+       BUG ANTERIOR: intersectObjects(arr, false) — NO recursivo.
+       Los meshes del GLB son hijos de Groups, nunca se detectaban.
+       CORRECCIÓN: usar escena completa con recursive=true,
+       filtrar por colisionables en postproceso. ── */
     if (desplazamiento.length() > 0.0001 && colisionables.length > 0) {
-      const origen = camera.position.clone();
+      /* Origen: a la altura de la cintura para detectar muros bajos también */
+      const origenMuro = posActual.clone();
+      origenMuro.y -= 0.4;  /* cintura aprox */
       const dirMov = desplazamiento.clone().normalize();
 
-      rayMovimiento.set(origen, dirMov);
-      rayMovimiento.far = 0.55;
-      const hits = rayMovimiento.intersectObjects(colisionables, false);
+      rayMovimiento.set(origenMuro, dirMov);
+      rayMovimiento.near = 0;
+      rayMovimiento.far  = 0.6;
+
+      /*
+       * CRÍTICO: segundo argumento = true → RECURSIVO.
+       * Sin esto, los hijos de Group (toda la geometría de un GLB) no se detectan.
+       */
+      const hits = rayMovimiento.intersectObjects(colisionables, true);
 
       if (hits.length > 0 && hits[0].distance < 0.5) {
-        /* Deslizar a lo largo del muro: proyectar desplazamiento en la normal del muro */
-        const normal = hits[0].face ? hits[0].face.normal.clone() : new THREE.Vector3(0,0,0);
-        normal.transformDirection(hits[0].object.matrixWorld);
-        normal.y = 0; normal.normalize();
-        /* Componente perpendicular al muro se cancela */
-        const penetracion = desplazamiento.dot(normal);
-        if (penetracion < 0) desplazamiento.addScaledVector(normal, -penetracion);
+        const hitFace = hits[0].face;
+        if (hitFace) {
+          /* Normal del muro en world space */
+          const normal = hitFace.normal.clone()
+            .transformDirection(hits[0].object.matrixWorld);
+          normal.y = 0;
+          if (normal.length() > 0.001) {
+            normal.normalize();
+            /* Cancelar solo la componente que penetra el muro (wall-slide) */
+            const penetracion = desplazamiento.dot(normal);
+            if (penetracion < 0) desplazamiento.addScaledVector(normal, -penetracion);
+          }
+        } else {
+          /* Sin face (geometría sin índices): bloqueo completo */
+          desplazamiento.set(0, 0, 0);
+        }
       }
     }
 
     /* ── 3. Aplicar desplazamiento horizontal ── */
-    if (!ES_MOVIL && controls) {
-      /* Mover el objeto padre del PointerLockControls */
-      const obj = controls.getObject();
-      obj.position.add(desplazamiento);
-    } else {
-      camera.position.add(desplazamiento);
-    }
+    posActual.add(desplazamiento);
 
-    /* ── 4. GRAVEDAD + SUELO (rayo hacia abajo) ── */
-    const posActual = (!ES_MOVIL && controls) ? controls.getObject().position : camera.position;
-
+    /* ── 4. GRAVEDAD + SUELO + RAMPAS ──
+       Rayo hacia abajo desde la posición del jugador.
+       CORRECCIÓN: recursive = true para detectar suelos del GLB. ── */
     if (colisionables.length > 0) {
-      /* Origen del rayo: ligeramente por encima de los pies */
       const origenRay = posActual.clone();
-      origenRay.y += 0.1; /* pequeño offset para no empezar dentro del suelo */
+      origenRay.y += 0.15;  /* pequeño offset antiglitch */
 
       rayAbajo.set(origenRay, new THREE.Vector3(0, -1, 0));
-      rayAbajo.far = ALTURA_OJOS + 2.0;
+      rayAbajo.near = 0;
+      rayAbajo.far  = ALTURA_OJOS + 3.0;
 
-      const hitsAbajo = rayAbajo.intersectObjects(colisionables, false);
+      /* recursive = true → detecta suelos dentro de Groups del GLB */
+      const hitsAbajo = rayAbajo.intersectObjects(colisionables, true);
 
       if (hitsAbajo.length > 0) {
-        const distSuelo = hitsAbajo[0].distance - 0.1; /* descontar el offset */
-        const sueloY    = origenRay.y - hitsAbajo[0].distance;
+        /* Descontar el offset de origen */
+        const distReal = hitsAbajo[0].distance - 0.15;
+        const sueloY   = posActual.y + 0.15 - hitsAbajo[0].distance;
+        const targetY  = sueloY + ALTURA_OJOS;
+        const diff     = targetY - posActual.y;
 
-        if (distSuelo < ALTURA_OJOS) {
-          /* Estamos sobre una superficie — soporte y posible rampa */
+        if (distReal <= ALTURA_OJOS + 0.05) {
+          /* Estamos apoyados en una superficie */
           velocidadY = 0;
-          /* Subida suave de rampa: no teletransportar, suavizar */
-          const targetY = sueloY + ALTURA_OJOS;
-          const diff    = targetY - posActual.y;
-          if (diff > 0 && diff < RAMPA_MAX) {
-            /* Rampa hacia arriba: suave */
-            posActual.y += Math.min(diff, RAMPA_MAX * delta * 20);
-          } else if (diff < 0) {
-            /* Descenso: seguir pegado al suelo */
+          if (Math.abs(diff) < 0.001) {
+            /* Ya en posición exacta */
+          } else if (diff > 0 && diff <= RAMPA_MAX) {
+            /* Rampa ascendente: interpolación suave */
+            posActual.y += diff * Math.min(delta * 18, 1);
+          } else if (diff > RAMPA_MAX) {
+            /* Escalón demasiado alto: bloquear subida */
+            /* (el muro ya canceló el avance horizontal) */
+          } else {
+            /* Superficie más baja / descenso */
             posActual.y = targetY;
           }
         } else {
-          /* En el aire: aplicar gravedad */
+          /* En el aire: gravedad acumulada */
           velocidadY += GRAVEDAD * delta;
           posActual.y += velocidadY * delta;
-          /* Evitar caer más abajo que el suelo detectado */
-          if (posActual.y < sueloY + ALTURA_OJOS) {
-            posActual.y = sueloY + ALTURA_OJOS;
+          if (posActual.y < targetY) {
+            posActual.y = targetY;
             velocidadY  = 0;
           }
         }
       } else {
-        /* Sin suelo detectado: gravedad libre (caída al vacío, limitada) */
+        /* Sin suelo bajo los pies: caída libre */
         velocidadY += GRAVEDAD * delta;
         posActual.y += velocidadY * delta;
-        /* Safety floor: no caer por debajo de -2m */
-        if (posActual.y < ALTURA_OJOS - 2) {
-          posActual.y = ALTURA_OJOS - 2;
+        /* Safety floor: no caer infinito */
+        if (posActual.y < -10) {
+          posActual.y = ALTURA_OJOS;
           velocidadY  = 0;
         }
       }
     } else {
-      /* Sin colisionables todavía: fijar altura clásica */
+      /* Todavía cargando el modelo: altura fija */
       posActual.y = ALTURA_OJOS;
     }
   }
