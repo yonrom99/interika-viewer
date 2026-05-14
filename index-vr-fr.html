@@ -604,8 +604,9 @@
        El background visual se controla con scene.background = Color. */
     const W = 64, H = 32;
     const data = new Float32Array(W * H * 4);
+    /* 0.35 = blanco neutro sin sobreexponer materiales claros PBR */
     for (let i = 0; i < W * H * 4; i += 4) {
-      data[i] = 1.0; data[i+1] = 1.0; data[i+2] = 1.0; data[i+3] = 1.0;
+      data[i] = 0.35; data[i+1] = 0.35; data[i+2] = 0.35; data[i+3] = 1.0;
     }
 
     const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
@@ -642,10 +643,10 @@
     scene.environment = envMap;
     scene.background  = new THREE.Color(0xffffff);
 
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.25);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffd9aa, 1.0);
+    const dirLight = new THREE.DirectionalLight(0xfffaf0, 0.85);
     dirLight.position.set(15, 30, 10);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width  = 2048;
@@ -659,7 +660,7 @@
     dirLight.shadow.bias          = -0.001;
     scene.add(dirLight);
 
-    const rimLight = new THREE.DirectionalLight(0x7aaeff, 0.6);
+    const rimLight = new THREE.DirectionalLight(0xddeeff, 0.25);
     rimLight.position.set(-15, 8, -20);
     scene.add(rimLight);
 
