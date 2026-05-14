@@ -600,35 +600,12 @@
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
 
-    const W = 512, H = 256;
+    /* HDRI 100% neutro blanco — solo para iluminación PBR.
+       El background visual se controla con scene.background = Color. */
+    const W = 64, H = 32;
     const data = new Float32Array(W * H * 4);
-
-    for (let y = 0; y < H; y++) {
-      const t = y / H;
-      let r, g, b;
-
-      /* Cielo blanco neutro: gris muy claro arriba → blanco puro en el horizonte */
-      if (t < 0.42) {
-        const f = t / 0.42;
-        r = THREE.MathUtils.lerp(0.82, 0.95, f);
-        g = THREE.MathUtils.lerp(0.84, 0.97, f);
-        b = THREE.MathUtils.lerp(0.88, 1.00, f);
-      } else if (t < 0.52) {
-        const f = (t - 0.42) / 0.10;
-        r = THREE.MathUtils.lerp(0.95, 1.00, f);
-        g = THREE.MathUtils.lerp(0.97, 1.00, f);
-        b = THREE.MathUtils.lerp(1.00, 1.00, f);
-      } else {
-        const f = (t - 0.52) / 0.48;
-        r = THREE.MathUtils.lerp(1.00, 0.88, f);
-        g = THREE.MathUtils.lerp(1.00, 0.90, f);
-        b = THREE.MathUtils.lerp(1.00, 0.92, f);
-      }
-
-      for (let x = 0; x < W; x++) {
-        const i = (y * W + x) * 4;
-        data[i] = r; data[i+1] = g; data[i+2] = b; data[i+3] = 1.0;
-      }
+    for (let i = 0; i < W * H * 4; i += 4) {
+      data[i] = 1.0; data[i+1] = 1.0; data[i+2] = 1.0; data[i+3] = 1.0;
     }
 
     const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.FloatType);
