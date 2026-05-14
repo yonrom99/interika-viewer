@@ -607,21 +607,22 @@
       const t = y / H;
       let r, g, b;
 
+      /* Cielo blanco neutro: gris muy claro arriba → blanco puro en el horizonte */
       if (t < 0.42) {
         const f = t / 0.42;
-        r = THREE.MathUtils.lerp(0.02, 0.10, f);
-        g = THREE.MathUtils.lerp(0.04, 0.14, f);
-        b = THREE.MathUtils.lerp(0.14, 0.24, f);
+        r = THREE.MathUtils.lerp(0.82, 0.95, f);
+        g = THREE.MathUtils.lerp(0.84, 0.97, f);
+        b = THREE.MathUtils.lerp(0.88, 1.00, f);
       } else if (t < 0.52) {
         const f = (t - 0.42) / 0.10;
-        r = THREE.MathUtils.lerp(0.10, 1.2,  f);
-        g = THREE.MathUtils.lerp(0.14, 1.0,  f);
-        b = THREE.MathUtils.lerp(0.24, 0.6,  f);
+        r = THREE.MathUtils.lerp(0.95, 1.00, f);
+        g = THREE.MathUtils.lerp(0.97, 1.00, f);
+        b = THREE.MathUtils.lerp(1.00, 1.00, f);
       } else {
         const f = (t - 0.52) / 0.48;
-        r = THREE.MathUtils.lerp(1.2,  0.06, f);
-        g = THREE.MathUtils.lerp(1.0,  0.05, f);
-        b = THREE.MathUtils.lerp(0.6,  0.04, f);
+        r = THREE.MathUtils.lerp(1.00, 0.88, f);
+        g = THREE.MathUtils.lerp(1.00, 0.90, f);
+        b = THREE.MathUtils.lerp(1.00, 0.92, f);
       }
 
       for (let x = 0; x < W; x++) {
@@ -658,11 +659,11 @@
     document.getElementById('canvas-container').appendChild(renderer.domElement);
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0d1117, 0.025);
+    scene.fog = new THREE.FogExp2(0xf5f5f5, 0.018);
 
     const envMap     = crearHDRI(renderer);
     scene.environment = envMap;
-    scene.background  = envMap;
+    scene.background  = new THREE.Color(0xffffff);
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
     scene.add(ambientLight);
