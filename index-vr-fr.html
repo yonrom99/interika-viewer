@@ -556,6 +556,17 @@
   let moverAdelante = false, moverAtras = false, moverIzq = false, moverDer = false;
   const reloj = { anterior: 0 };
 
+  /* ── SISTEMA GAZE TELEPORT ── */
+  const rayGaze        = new THREE.Raycaster();   // raycaster desde el centro de la cámara
+  const reticleMat     = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
+  const reticleRingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthTest: false, side: THREE.FrontSide });
+  let   reticleGroup   = null;   // grupo adjunto a la cámara (visible solo en VR)
+  let   reticleArc     = null;   // el arco de progreso (se actualiza por frame)
+  let   waypoints      = [];     // discos de teletransporte en escena
+  let   gazeTimer      = 0;      // segundos mirando el waypoint actual
+  let   gazeTarget     = null;   // waypoint actualmente apuntado
+  const GAZE_DWELL     = 1.5;    // segundos para teleportar
+
   const joy   = { activo: false, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0 };
   const tLook = { activo: false, touchId: null, lx: 0, ly: 0 };
 
@@ -715,6 +726,7 @@
       iniciarTouchLook();
     }
 
+    crearReticulo();
     cargarModelo(CONFIG.modeloURL);
 
     window.addEventListener('resize', onResize);
@@ -811,6 +823,169 @@
     });
 
     return { meshesColision, encontroCollisionMesh };
+  }
+
+  /* ═══════════════════════════════════════════════════
+     RETÍCULA GAZE (CURSOR VR)
+  ═══════════════════════════════════════════════════ */
+  function crearReticulo() {
+    /*
+     * El retículo se adjunta a la cámara a ~2 m de distancia.
+     * Está compuesto de:
+     *   - Anillo exterior (siempre visible)
+     *   - Punto central
+     *   - Arco de progreso (se reconstruye cada frame según gazeTimer)
+     * Solo es visible cuando modoActual === 'vr'.
+     */
+    reticleGroup = new THREE.Group();
+    reticleGroup.position.set(0, 0, -2);    // 2 m frente a la cámara
+    reticleGroup.renderOrder = 999;
+
+    const R_EXT = 0.04;   // radio exterior del anillo
+    const R_INT = 0.032;  // radio interior del anillo
+    const SEGS  = 48;
+
+    /* Anillo exterior estático */
+    const ringGeo = new THREE.RingGeometry(R_INT, R_EXT, SEGS);
+    const ring    = new THREE.Mesh(ringGeo, reticleRingMat);
+    reticleGroup.add(ring);
+
+    /* Punto central */
+    const dotGeo = new THREE.CircleGeometry(0.006, 16);
+    const dot    = new THREE.Mesh(dotGeo, reticleMat);
+    reticleGroup.add(dot);
+
+    /* El arco de progreso se crea en actualizarArcoGaze() */
+    camera.add(reticleGroup);
+    reticleGroup.visible = false;   // oculto hasta modo VR
+  }
+
+  function actualizarArcoGaze(progreso) {
+    /*
+     * Reconstruye el arco de progreso (0..1).
+     * Se elimina el arco anterior y se crea uno nuevo cada frame
+     * solo cuando hay un waypoint apuntado — es económico porque
+     * RingGeometry con thetaLength es muy liviano.
+     */
+    if (reticleArc) {
+      reticleGroup.remove(reticleArc);
+      reticleArc.geometry.dispose();
+      reticleArc = null;
+    }
+
+    if (progreso <= 0) return;
+
+    const R_EXT  = 0.044;
+    const R_INT  = 0.034;
+    const SEGS   = 48;
+    const theta  = Math.PI * 2 * progreso;
+
+    const arcGeo = new THREE.RingGeometry(R_INT, R_EXT, SEGS, 1, -Math.PI / 2, theta);
+    const arcMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.95,
+      depthTest: false,
+      side: THREE.FrontSide
+    });
+    reticleArc = new THREE.Mesh(arcGeo, arcMat);
+    reticleArc.renderOrder = 1000;
+    reticleGroup.add(reticleArc);
+  }
+
+  /* ═══════════════════════════════════════════════════
+     WAYPOINTS DE TELETRANSPORTE
+  ═══════════════════════════════════════════════════ */
+  function crearDiscWaypoint(posicion) {
+    /*
+     * Crea un disco semi-transparente en el suelo en la posición dada.
+     * Es el objeto que el Raycaster detectará para triggear el teleport.
+     */
+    const grupo = new THREE.Group();
+    grupo.position.copy(posicion);
+    grupo.position.y += 0.02;   // ligeramente sobre el suelo para evitar z-fighting
+
+    /* Disco base */
+    const discGeo = new THREE.CircleGeometry(0.4, 32);
+    const discMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.rotation.x = -Math.PI / 2;
+    disc.name        = '_waypoint_disc_';
+    grupo.add(disc);
+
+    /* Anillo exterior del disco */
+    const ringGeo = new THREE.RingGeometry(0.36, 0.42, 32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.55,
+      side: THREE.DoubleSide,
+      depthWrite: false
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    grupo.add(ring);
+
+    /* Chevron / flecha pulsante (triángulo central) */
+    const chevGeo = new THREE.ConeGeometry(0.1, 0.18, 3);
+    const chevMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.7,
+      depthWrite: false
+    });
+    const chev = new THREE.Mesh(chevGeo, chevMat);
+    chev.rotation.x = -Math.PI / 2;
+    chev.position.y  = 0.01;
+    chev.name        = '_waypoint_chev_';
+    grupo.add(chev);
+
+    grupo.name = '_waypoint_group_';
+    scene.add(grupo);
+
+    /* El raycaster debe apuntar al disco (el hijo Mesh) */
+    waypoints.push(disc);
+    return grupo;
+  }
+
+  function extraerWaypointsDelModelo(raiz) {
+    /*
+     * Busca cualquier nodo con "PuntoVR" en el nombre (case-insensitive).
+     * Por cada uno: obtiene su posición mundial, lo oculta,
+     * y genera un disco de teletransporte en su lugar.
+     */
+    const patron = /puntovr/i;
+    let   encontrados = 0;
+
+    raiz.traverse((nodo) => {
+      if (!patron.test(nodo.name)) return;
+
+      const posWorld = new THREE.Vector3();
+      nodo.getWorldPosition(posWorld);
+
+      /* Ocultar el marcador original del GLB */
+      nodo.visible = false;
+      nodo.traverse((hijo) => { hijo.visible = false; });
+
+      crearDiscWaypoint(posWorld);
+      encontrados++;
+
+      if (DEBUG) console.log('[INTERIKA] PuntoVR encontrado:', nodo.name, posWorld);
+    });
+
+    /* Fallback: si no hay ningún PuntoVR, crear uno en el origen */
+    if (encontrados === 0) {
+      if (DEBUG) console.warn('[INTERIKA] Sin PuntoVR en el modelo — usando fallback en origen');
+      crearDiscWaypoint(new THREE.Vector3(0, 0, 0));
+    }
+
+    if (DEBUG) console.log('[INTERIKA] Total waypoints:', waypoints.length);
   }
 
   /* ═══════════════════════════════════════════════════
@@ -911,6 +1086,9 @@
           });
         });
 
+        /* ── WAYPOINTS DE TELETRANSPORTE ── */
+        extraerWaypointsDelModelo(modelo);
+
         modeloCargado = true;
 
         /* Actualizar debug */
@@ -976,6 +1154,66 @@
     const delta = Math.min((timestamp - reloj.anterior) / 1000, 0.1);
     reloj.anterior = timestamp;
     moverCamara(delta);
+
+    /* ── GAZE TELEPORT (solo en modo VR) ── */
+    if (modoActual === 'vr' && reticleGroup && waypoints.length > 0) {
+      /*
+       * En WebXR r128 la cámara activa es renderer.xr.getCamera(camera).
+       * Lanzamos el rayo desde el centro de la pantalla VR (NDC 0,0)
+       * usando setFromCamera con la cámara XR para que el vector apunte
+       * exactamente donde mira el usuario.
+       */
+      const xrCam = renderer.xr.isPresenting
+        ? renderer.xr.getCamera(camera)
+        : camera;
+
+      rayGaze.setFromCamera({ x: 0, y: 0 }, xrCam);
+
+      const hits = rayGaze.intersectObjects(waypoints, false);
+
+      if (hits.length > 0) {
+        /* El usuario está mirando un waypoint */
+        const wpActual = hits[0].object;
+
+        if (wpActual !== gazeTarget) {
+          /* Cambió de objetivo — resetear timer */
+          gazeTarget = wpActual;
+          gazeTimer  = 0;
+        }
+
+        gazeTimer += delta;
+        actualizarArcoGaze(Math.min(gazeTimer / GAZE_DWELL, 1));
+
+        if (gazeTimer >= GAZE_DWELL) {
+          /* ¡TELETRANSPORTE! */
+          const destino = new THREE.Vector3();
+          gazeTarget.parent.getWorldPosition(destino);   // posición del grupo padre (el disc group)
+
+          const posJugador = (!ES_MOVIL && controls)
+            ? controls.getObject().position
+            : camera.position;
+
+          posJugador.x = destino.x;
+          posJugador.z = destino.z;
+          /* Y no se toca — la gravedad del render loop la ajusta al suelo */
+
+          /* Reset */
+          gazeTimer  = 0;
+          gazeTarget = null;
+          actualizarArcoGaze(0);
+
+          if (DEBUG) console.log('[INTERIKA] Teletransporte a:', destino.x.toFixed(2), destino.z.toFixed(2));
+        }
+      } else {
+        /* Sin waypoint en la mira — resetear */
+        if (gazeTarget !== null) {
+          gazeTarget = null;
+          gazeTimer  = 0;
+          actualizarArcoGaze(0);
+        }
+      }
+    }
+
     renderer.render(scene, camera);
   }
 
@@ -1304,6 +1542,7 @@
     btnFR.classList.add('activo');
     btnVR.classList.remove('activo');
     mostrarBadge('Free-Roam · Activo');
+    if (reticleGroup) reticleGroup.visible = false;
   }
 
   async function activarVR() {
@@ -1328,6 +1567,7 @@
       });
       renderer.xr.setSession(session);
       mostrarBadge('VR Headset · Activo');
+      if (reticleGroup) reticleGroup.visible = true;
 
       session.addEventListener('end', () => {
         modoActual = 'freeroam';
@@ -1335,6 +1575,10 @@
         btnVR.classList.remove('activo');
         mostrarBadge('Free-Roam · Activo');
         setTimeout(() => modoBadge.classList.remove('visible'), 3000);
+        if (reticleGroup) reticleGroup.visible = false;
+        gazeTimer  = 0;
+        gazeTarget = null;
+        actualizarArcoGaze(0);
       });
     } catch (err) {
       console.warn('[INTERIKA] Error iniciando VR:', err);
