@@ -584,15 +584,16 @@
   let moverAdelante = false, moverAtras = false, moverIzq = false, moverDer = false;
   const reloj = { anterior: 0 };
 
-  /* ── SISTEMA GAZE TELEPORT ── */
-  const rayGaze        = new THREE.Raycaster();   // raycaster desde el centro de la cámara
+  /* ── SISTEMA GAZE TELEPORT (PISO LIBRE) ── */
+  const rayGaze        = new THREE.Raycaster();   // raycaster desde el centro de la cámara VR
   const reticleMat     = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
   const reticleRingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, depthTest: false, side: THREE.FrontSide });
-  let   reticleGroup   = null;   // grupo adjunto a la cámara (visible solo en VR)
-  let   reticleArc     = null;   // el arco de progreso (se actualiza por frame)
-  let   waypoints      = [];     // discos de teletransporte en escena
-  let   gazeTimer      = 0;      // segundos mirando el waypoint actual
-  let   gazeTarget     = null;   // waypoint actualmente apuntado
+  let   reticleGroup   = null;   // retícula HUD fijada a la cámara
+  let   reticleArc     = null;   // arco de progreso (reconstruido por frame)
+  let   waypoints      = [];     // conservado para compatibilidad (discos de escena)
+  let   teleportMarker = null;   // holograma azul que sigue el punto de impacto en el suelo
+  let   gazeTimer      = 0;      // segundos acumulados mirando el piso
+  let   gazeTarget     = null;   // THREE.Vector3 del punto de suelo actualmente apuntado
   const GAZE_DWELL     = 1.5;    // segundos para teleportar
 
   const joy   = { activo: false, touchId: null, cx: 0, cy: 0, dx: 0, dy: 0 };
@@ -755,6 +756,7 @@
     }
 
     crearReticulo();
+    crearTeleportMarker();
     cargarModelo(CONFIG.modeloURL);
 
     window.addEventListener('resize', onResize);
@@ -886,6 +888,65 @@
     /* El arco de progreso se crea en actualizarArcoGaze() */
     camera.add(reticleGroup);
     reticleGroup.visible = false;   // oculto hasta modo VR
+  }
+
+  function crearTeleportMarker() {
+    /*
+     * Holograma azul que se posiciona en el punto de impacto del rayo
+     * contra el suelo. Se mantiene siempre por encima de la geometría
+     * gracias a depthTest:false + renderOrder alto.
+     */
+    const grupo = new THREE.Group();
+    grupo.visible = false;
+    grupo.renderOrder = 999;
+
+    /* Disco relleno central */
+    const discGeo = new THREE.CircleGeometry(0.35, 48);
+    const discMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false
+    });
+    const disc = new THREE.Mesh(discGeo, discMat);
+    disc.rotation.x = -Math.PI / 2;
+    disc.renderOrder = 999;
+    grupo.add(disc);
+
+    /* Anillo exterior */
+    const ringGeo = new THREE.RingGeometry(0.32, 0.38, 48);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.7,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.renderOrder = 1000;
+    grupo.add(ring);
+
+    /* Chevron / flecha central */
+    const chevGeo = new THREE.ConeGeometry(0.09, 0.16, 3);
+    const chevMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.75,
+      depthTest: false,
+      depthWrite: false
+    });
+    const chev = new THREE.Mesh(chevGeo, chevMat);
+    chev.rotation.x = -Math.PI / 2;
+    chev.position.y  = 0.01;
+    chev.renderOrder = 1001;
+    grupo.add(chev);
+
+    scene.add(grupo);
+    teleportMarker = grupo;
   }
 
   function actualizarArcoGaze(progreso) {
@@ -1183,29 +1244,60 @@
     reloj.anterior = timestamp;
     moverCamara(delta);
 
-    /* ── GAZE TELEPORT (solo en modo VR) ── */
-    if (modoActual === 'vr' && reticleGroup && waypoints.length > 0) {
+    /* ── GAZE TELEPORT (PISO LIBRE — solo en modo VR) ── */
+    if (modoActual === 'vr' && reticleGroup && colSuelo.length > 0) {
       /*
-       * En WebXR r128 la cámara activa es renderer.xr.getCamera(camera).
-       * Lanzamos el rayo desde el centro de la pantalla VR (NDC 0,0)
-       * usando setFromCamera con la cámara XR para que el vector apunte
-       * exactamente donde mira el usuario.
+       * LÓGICA DE PISO LIBRE:
+       * ─────────────────────
+       * 1. Se lanza un rayo desde el centro visual de la cámara XR hacia donde
+       *    mira el usuario (NDC 0,0).
+       * 2. Se castea contra colSuelo (todos los meshes de suelo/colisión).
+       * 3. Un hit es válido como "piso" si hit.point.y está al menos 1.0 m
+       *    POR DEBAJO de la altura de los ojos — elimina dependencia de
+       *    hit.face.normal, que viene invertido en modelos de SketchUp/Blender.
+       * 4. Si el hit es válido: mover el teleportMarker al punto de impacto,
+       *    acumular gazeTimer y teletransportar al llegar a GAZE_DWELL.
+       * 5. Si no hay hit válido: ocultar el marker y resetear el timer.
        */
+
       const xrCam = renderer.xr.isPresenting
         ? renderer.xr.getCamera(camera)
         : camera;
 
+      /* Altura de los ojos — usamos la posición Y de la cámara activa */
+      const alturaOjos = xrCam.position.y;
+
       rayGaze.setFromCamera({ x: 0, y: 0 }, xrCam);
+      rayGaze.far = 30;   // alcance máximo del gaze (metros)
 
-      const hits = rayGaze.intersectObjects(waypoints, false);
+      const hits = rayGaze.intersectObjects(colSuelo, false);
 
-      if (hits.length > 0) {
-        /* El usuario está mirando un waypoint */
-        const wpActual = hits[0].object;
+      /* Buscar el primer hit que esté suficientemente por debajo de los ojos */
+      let hitValido = null;
+      for (const h of hits) {
+        if (h.point.y < alturaOjos - 1.0) {
+          hitValido = h;
+          break;
+        }
+      }
 
-        if (wpActual !== gazeTarget) {
-          /* Cambió de objetivo — resetear timer */
-          gazeTarget = wpActual;
+      if (hitValido) {
+        /* ── Hit válido: mostrar holograma y acumular tiempo ── */
+        const punto = hitValido.point;
+
+        /* Mover el teleportMarker al punto de impacto */
+        if (teleportMarker) {
+          teleportMarker.position.set(punto.x, punto.y + 0.01, punto.z);
+          teleportMarker.visible = true;
+        }
+
+        /* ¿Es el mismo punto que el frame anterior? (tolerancia 0.3 m) */
+        const mismoTarget = gazeTarget &&
+          gazeTarget.distanceTo(punto) < 0.3;
+
+        if (!mismoTarget) {
+          /* Cambió el objetivo — resetear timer y guardar nuevo punto */
+          gazeTarget = punto.clone();
           gazeTimer  = 0;
         }
 
@@ -1214,31 +1306,31 @@
 
         if (gazeTimer >= GAZE_DWELL) {
           /* ¡TELETRANSPORTE! */
-          const destino = new THREE.Vector3();
-          gazeTarget.parent.getWorldPosition(destino);   // posición del grupo padre (el disc group)
-
           const posJugador = (!ES_MOVIL && controls)
             ? controls.getObject().position
             : camera.position;
 
-          posJugador.x = destino.x;
-          posJugador.z = destino.z;
+          posJugador.x = punto.x;
+          posJugador.z = punto.z;
           /* Y no se toca — la gravedad del render loop la ajusta al suelo */
 
           /* Reset */
           gazeTimer  = 0;
           gazeTarget = null;
           actualizarArcoGaze(0);
+          if (teleportMarker) teleportMarker.visible = false;
 
-          if (DEBUG) console.log('[INTERIKA] Teletransporte a:', destino.x.toFixed(2), destino.z.toFixed(2));
+          if (DEBUG) console.log('[INTERIKA] Teletransporte (piso libre) a:',
+            punto.x.toFixed(2), punto.z.toFixed(2));
         }
       } else {
-        /* Sin waypoint en la mira — resetear */
+        /* ── Sin piso válido en la mira — resetear ── */
         if (gazeTarget !== null) {
           gazeTarget = null;
           gazeTimer  = 0;
           actualizarArcoGaze(0);
         }
+        if (teleportMarker) teleportMarker.visible = false;
       }
     }
 
@@ -1607,6 +1699,7 @@
         gazeTimer  = 0;
         gazeTarget = null;
         actualizarArcoGaze(0);
+        if (teleportMarker) teleportMarker.visible = false;
       });
     } catch (err) {
       console.warn('[INTERIKA] Error iniciando VR:', err);
