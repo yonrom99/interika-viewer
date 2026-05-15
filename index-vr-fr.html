@@ -736,11 +736,21 @@
     if (!ES_MOVIL) {
       controls = new THREE.PointerLockControls(camera, renderer.domElement);
 
-      /* playerRig contiene el objeto de PointerLockControls;
-         mover playerRig.position mueve al jugador sin que WebXR lo sobreescriba */
+      /*
+       * ARQUITECTURA PC:
+       * PointerLockControls gestiona internamente controls.getObject().position.
+       * Metemos ese objeto dentro de playerRig para que el teletransporte VR
+       * pueda mover el rig. En Free-Roam, la física opera sobre
+       * controls.getObject().position directamente (como siempre).
+       * El playerRig arranca en el mismo lugar que la cámara inicial.
+       */
       playerRig = new THREE.Group();
+      playerRig.position.set(0, 0, 0);   // PLC gestiona la Y interna
       playerRig.add(controls.getObject());
       scene.add(playerRig);
+
+      /* Posición inicial del jugador dentro del rig */
+      controls.getObject().position.set(0, ALTURA_OJOS, 8);
 
       controls.addEventListener('lock', () => {
         crosshair.classList.add('visible');
@@ -756,7 +766,12 @@
     } else {
       camera.rotation.order = 'YXZ';
 
-      /* En móvil el playerRig contiene directamente la cámara */
+      /*
+       * ARQUITECTURA MÓVIL / VR:
+       * El playerRig es el "cuerpo" del jugador. Se posiciona en suelo (Y=0)
+       * y la cámara cuelga dentro de él. La física ajusta playerRig.position.y
+       * para que los ojos queden a ALTURA_OJOS sobre el suelo.
+       */
       playerRig = new THREE.Group();
       playerRig.position.set(0, ALTURA_OJOS, 8);
       playerRig.add(camera);
@@ -1201,12 +1216,17 @@
 
         if (gazeTimer >= GAZE_DWELL) {
           /* ─── TELETRANSPORTE ───
-           * Movemos playerRig.position (el contenedor del jugador).
-           * La cámara/headset está dentro del rig, así que se mueve
-           * junto con él sin que WebXR lo sobreescriba. */
+           * Movemos playerRig.position al punto de suelo.
+           * X/Z: coordenada del hit.
+           * Y: punto.y (nivel del suelo en ese punto) → el rig arranca en la
+           *    superficie y la gravedad del loop lo confirma en el siguiente frame.
+           *    NO sumamos ALTURA_OJOS aquí — el headset ya aporta su propia
+           *    altura física (~1.7 m) como posición local dentro del rig.
+           */
           playerRig.position.x = punto.x;
+          playerRig.position.y = punto.y;   // rig a ras de suelo; headset aporta la altura
           playerRig.position.z = punto.z;
-          /* Y queda libre para que la gravedad del loop la ajuste al suelo */
+          velocidadY = 0;   // cancelar inercia vertical para aterrizaje limpio
 
           gazeTimer  = 0;
           gazeTarget = null;
@@ -1234,17 +1254,32 @@
      ██████  MOVIMIENTO + FÍSICAS
      ═══════════════════════════════════════════════════
 
-     ARQUITECTURA playerRig:
+     ARQUITECTURA DE POSICIÓN:
      ─────────────────────────────
-     playerRig es un THREE.Group que contiene la cámara
-     (o el objeto de PointerLockControls en PC).
-     Toda la física y el teletransporte modifican
-     playerRig.position — nunca camera.position directamente,
-     ya que en WebXR la pose del headset sobreescribe la cámara.
+     PC (Free-Roam):
+       posActual = controls.getObject().position
+       PointerLockControls gestiona ese objeto internamente.
+       Los rayos de colisión salen desde posActual (altura real de la cámara).
+
+     Móvil / VR:
+       posActual = playerRig.position
+       El playerRig es el "cuerpo" — su Y representa la altura de los ojos.
+       El teletransporte VR mueve playerRig.position sin interferir con la
+       pose del headset (que es relativa al rig, no al mundo).
   ═══════════════════════════════════════════════════ */
   function moverCamara(delta) {
-    /* Referencia unificada: siempre el rig del jugador */
-    const posActual = playerRig.position;
+    /*
+     * Referencia de posición según plataforma:
+     * - PC: controls.getObject().position  (PLC lo gestiona; sus Y/X/Z son mundo)
+     * - Móvil/VR: playerRig.position
+     *
+     * Esta distinción es CRÍTICA: en PC los rayos de colisión deben salir
+     * desde la posición real de la cámara (~1.7 m sobre el suelo), no desde
+     * el origen del playerRig (que en PC siempre es 0,0,0).
+     */
+    const posActual = (!ES_MOVIL && controls)
+      ? controls.getObject().position
+      : playerRig.position;
 
     /* ── 1. Intención de movimiento horizontal ── */
     const vel = CONFIG.velocidad * delta;
@@ -1328,6 +1363,20 @@
 
     /* ── 4. GRAVEDAD + SUELO + RAMPAS ── */
     if (colSuelo.length > 0) {
+      /*
+       * OFFSET_Y: el origen del rayo se lanza ligeramente por encima de posActual
+       * para evitar el glitch de "atravesar el suelo" en caída rápida.
+       *
+       * TARGET Y según modo:
+       * ─────────────────────
+       * Free-Roam / Móvil: posActual ES la cabeza → targetY = sueloY + ALTURA_OJOS
+       *
+       * VR Headset: posActual ES playerRig (el "suelo virtual del jugador").
+       *   El headset ya suma su propia altura física (~1.7 m) dentro del rig,
+       *   así que el rig debe quedarse en sueloY (Y=0 sobre la superficie).
+       *   Si usáramos sueloY + ALTURA_OJOS estaríamos doblando la altura → gigante.
+       */
+      const enVR = (modoActual === 'vr' && renderer.xr.isPresenting);
       const OFFSET_Y = 0.25;
       const origenRay = new THREE.Vector3(posActual.x, posActual.y + OFFSET_Y, posActual.z);
 
@@ -1340,10 +1389,13 @@
       if (hitsAbajo.length > 0) {
         const distReal = hitsAbajo[0].distance - OFFSET_Y;
         const sueloY   = posActual.y - distReal;
-        const targetY  = sueloY + ALTURA_OJOS;
+        /* En VR el rig debe quedar exactamente en sueloY; en Free-Roam, a ojo-altura */
+        const targetY  = enVR ? sueloY : sueloY + ALTURA_OJOS;
         const diff     = targetY - posActual.y;
+        /* En VR la distancia de "apoyado" es casi 0 (el rig está a ras de suelo) */
+        const umbralApoyado = enVR ? 0.08 : ALTURA_OJOS + 0.08;
 
-        if (distReal <= ALTURA_OJOS + 0.08) {
+        if (distReal <= umbralApoyado) {
           velocidadY = 0;
 
           if (diff > 0 && diff <= RAMPA_MAX) {
@@ -1365,14 +1417,14 @@
 
         if (DEBUG) {
           document.getElementById('dbg-suelo').textContent =
-            `suelo: ${sueloY.toFixed(2)} | dist: ${distReal.toFixed(2)} | diff: ${diff.toFixed(3)}`;
+            `suelo: ${sueloY.toFixed(2)} | dist: ${distReal.toFixed(2)} | diff: ${diff.toFixed(3)} | VR:${enVR}`;
         }
       } else {
         velocidadY += GRAVEDAD * delta;
         posActual.y += velocidadY * delta;
 
         if (posActual.y < -20) {
-          posActual.y = ALTURA_OJOS;
+          posActual.y = enVR ? 0 : ALTURA_OJOS;
           velocidadY  = 0;
           if (DEBUG) console.warn('[INTERIKA] Safety floor activado — reposicionando jugador');
         }
