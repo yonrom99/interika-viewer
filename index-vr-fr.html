@@ -242,6 +242,18 @@
     }
     .modal-btn:hover { background: var(--arena); color: var(--negro); }
 
+    /* ─── MODAL INSTRUCCIONES VR ─── */
+    #modal-instrucciones-vr {
+      position: fixed; inset: 0; z-index: 55;
+      background: rgba(10,10,10,0.88);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.4s ease, visibility 0.4s ease;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    #modal-instrucciones-vr.visible { opacity: 1; visibility: visible; }
+
     /* ─── BADGE ─── */
     .modo-badge {
       position: absolute;
@@ -401,7 +413,7 @@
           </svg>
           Free-Roam
         </button>
-        <button class="btn-secundario" id="btn-vr" onclick="activarVR()">
+        <button class="btn-secundario" id="btn-vr" onclick="mostrarModalVR()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M2 8a2 2 0 012-2h16a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V8z"/>
             <circle cx="8.5" cy="12" r="2"/><circle cx="15.5" cy="12" r="2"/>
@@ -459,6 +471,22 @@
       </div>
 
       <button class="modal-btn" onclick="cerrarModal()">Entendido</button>
+    </div>
+  </div>
+
+  <!-- ─── MODAL INSTRUCCIONES VR ─── -->
+  <div id="modal-instrucciones-vr">
+    <div class="modal-caja" style="position:relative;">
+      <p class="modal-titulo">Controles · VR Headset</p>
+      <div style="font-size:32px; margin-bottom:20px; opacity:0.5;">⬡</div>
+      <p class="modal-desc" style="line-height:2; font-size:11px; color:var(--blanco); letter-spacing:0.08em;">
+        Para recorrer la casa, simplemente mira fijamente<br>
+        hacia cualquier parte del piso durante 1.5 segundos.
+      </p>
+      <p class="modal-desc" style="margin-top:14px;">
+        Un holograma azul indicará tu punto de aterrizaje.
+      </p>
+      <button class="modal-btn" onclick="confirmarVR()">Entendido, Iniciar VR</button>
     </div>
   </div>
 
@@ -1602,6 +1630,15 @@
   function cerrarModal() {
     document.getElementById('modal-instrucciones').classList.remove('visible');
     if (!ES_MOVIL && controls) controls.lock();
+  }
+
+  function mostrarModalVR() {
+    document.getElementById('modal-instrucciones-vr').classList.add('visible');
+  }
+
+  function confirmarVR() {
+    document.getElementById('modal-instrucciones-vr').classList.remove('visible');
+    activarVR();
   }
 
   /* ═══════════════════════════════════════════════════
