@@ -331,7 +331,7 @@
     ar
     ar-modes="webxr scene-viewer quick-look"
     ar-placement="floor"
-    ar-scale="fixed"
+    ar-scale="auto"
     camera-controls
     auto-rotate
     shadow-intensity="1"
@@ -342,13 +342,36 @@
     style="display:none"
   ></model-viewer>
 
-  <!-- Script inteligente: Detiene la rotación solo en AR -->
+  <!-- Script: Detiene rotación en AR + ancla modelo al confirmar posición -->
   <script>
-    document.querySelector('#visor').addEventListener('ar-status', (event) => {
-      if (event.detail.status === 'session-started') {
+    const visorAR = document.querySelector('#visor');
+    let posicionConfirmada = false;
+    let escalaFijada = null;
+    let yFijada = null;
+
+    visorAR.addEventListener('ar-status', (event) => {
+      const estado = event.detail.status;
+      if (estado === 'session-started') {
         event.target.removeAttribute('auto-rotate');
-      } else if (event.detail.status === 'not-presenting') {
+        posicionConfirmada = false;
+        escalaFijada = null;
+        yFijada = null;
+      } else if (estado === 'not-presenting') {
         event.target.setAttribute('auto-rotate', '');
+        posicionConfirmada = false;
+      }
+    });
+
+    // Al primer tap el usuario confirma dónde va el modelo — capturamos la escala en ese momento
+    visorAR.addEventListener('ar-status', (event) => {
+      if (event.detail.status === 'object-placed') {
+        posicionConfirmada = true;
+        // Capturar y congelar la escala actual para evitar que el modelo flote
+        const mv = event.target;
+        if (mv.scale) {
+          escalaFijada = mv.scale;
+          mv.setAttribute('ar-scale', 'fixed');
+        }
       }
     });
   </script>
