@@ -334,47 +334,12 @@
     ar-scale="auto"
     camera-controls
     auto-rotate
-    shadow-intensity="1"
+    shadow-intensity="0.5"
     shadow-softness="0.8"
-    exposure="0.9"
+    exposure="1.2"
     environment-image="neutral"
-    xr-environment
     style="display:none"
   ></model-viewer>
-
-  <!-- Script: Detiene rotación en AR + ancla modelo al confirmar posición -->
-  <script>
-    const visorAR = document.querySelector('#visor');
-    let posicionConfirmada = false;
-    let escalaFijada = null;
-    let yFijada = null;
-
-    visorAR.addEventListener('ar-status', (event) => {
-      const estado = event.detail.status;
-      if (estado === 'session-started') {
-        event.target.removeAttribute('auto-rotate');
-        posicionConfirmada = false;
-        escalaFijada = null;
-        yFijada = null;
-      } else if (estado === 'not-presenting') {
-        event.target.setAttribute('auto-rotate', '');
-        posicionConfirmada = false;
-      }
-    });
-
-    // Al primer tap el usuario confirma dónde va el modelo — capturamos la escala en ese momento
-    visorAR.addEventListener('ar-status', (event) => {
-      if (event.detail.status === 'object-placed') {
-        posicionConfirmada = true;
-        // Capturar y congelar la escala actual para evitar que el modelo flote
-        const mv = event.target;
-        if (mv.scale) {
-          escalaFijada = mv.scale;
-          mv.setAttribute('ar-scale', 'fixed');
-        }
-      }
-    });
-  </script>
 
   <div id="ui-overlay">
     <div class="ui-header">
@@ -445,7 +410,6 @@
       visor.style.display = 'block';
       visor.src = CONFIG.modeloURL;
 
-      // Anti-Trabazón: Si a los 8 segundos no carga, quitamos el letrero a la fuerza
       const seguroVida = setTimeout(() => {
         cargando.classList.add('oculto');
         overlay.classList.add('visible');
@@ -496,8 +460,14 @@
     }
 
     visor.addEventListener('ar-status', (e) => {
-      if (e.detail.status === 'session-started') badgeAR.classList.add('visible');
-      else if (e.detail.status === 'not-presenting') badgeAR.classList.remove('visible');
+      if (e.detail.status === 'session-started') {
+        badgeAR.classList.add('visible');
+        visor.removeAttribute('auto-rotate');
+      }
+      else if (e.detail.status === 'not-presenting') {
+        badgeAR.classList.remove('visible');
+        visor.setAttribute('auto-rotate', '');
+      }
     });
   </script>
 
